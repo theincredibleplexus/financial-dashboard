@@ -5,17 +5,17 @@ import { fetchCSV, processUpBank, processPayPal, processGateway, processCommSec 
 // ─── SHARED ──────────────────────────────────────────────────────────────────
 const fmt=v=>`$${Math.abs(v).toLocaleString()}`;
 const fmtK=v=>{const a=Math.abs(v);return(a>=1000?`${v<0?"-":""}$${(a/1000).toFixed(a>=10000?0:1)}k`:`$${v}`);};
-const Tip=({active,payload,label})=>{if(!active||!payload)return null;return(<div style={{background:"#111127",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,padding:"10px 14px"}}><div style={{color:"#94a3b8",marginBottom:5,fontWeight:600,fontSize:11,textTransform:"uppercase"}}>{label}</div>{payload.filter(p=>p.value!==0&&p.value!==null).map((p,i)=>(<div key={i} style={{color:p.color||"#e2e8f0",display:"flex",justifyContent:"space-between",gap:20,lineHeight:1.7,fontSize:12}}><span>{p.name}</span><span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>{typeof p.value==='number'&&Math.abs(p.value)>=1000?`$${Math.abs(p.value).toLocaleString()}`:fmt(p.value)}</span></div>))}</div>);};
-const St=({label,value,sub,accent="#60a5fa",small})=>(<div style={{background:"linear-gradient(145deg,rgba(255,255,255,0.035) 0%,rgba(255,255,255,0.008) 100%)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:small?"11px 13px":"14px 18px",flex:1,minWidth:small?85:115}}><div style={{color:"#64748b",fontSize:9.5,textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:600,marginBottom:4}}>{label}</div><div style={{color:accent,fontSize:small?14:18,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",lineHeight:1.1}}>{value}</div>{sub&&<div style={{color:"#475569",fontSize:10,marginTop:3}}>{sub}</div>}</div>);
-const Sec=({children,icon})=>(<div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,marginTop:24}}><span style={{fontSize:14}}>{icon}</span><h2 style={{margin:0,fontSize:13,fontWeight:700,color:"#e2e8f0"}}>{children}</h2><div style={{flex:1,height:1,background:"linear-gradient(90deg,rgba(255,255,255,0.07),transparent)"}}/></div>);
+const Tip=({active,payload,label})=>{if(!active||!payload)return null;return(<div style={{background:"#111127",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,padding:"10px 14px"}}><div style={{color:"#94a3b8",marginBottom:5,fontWeight:600,fontSize:12,textTransform:"uppercase"}}>{label}</div>{payload.filter(p=>p.value!==0&&p.value!==null).map((p,i)=>(<div key={i} style={{color:p.color||"#e2e8f0",display:"flex",justifyContent:"space-between",gap:20,lineHeight:1.7,fontSize:13}}><span>{p.name}</span><span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>{typeof p.value==='number'&&Math.abs(p.value)>=1000?`$${Math.abs(p.value).toLocaleString()}`:fmt(p.value)}</span></div>))}</div>);};
+const St=({label,value,sub,accent="#60a5fa",small})=>(<div style={{background:"linear-gradient(145deg,rgba(255,255,255,0.035) 0%,rgba(255,255,255,0.008) 100%)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:small?"11px 13px":"14px 18px",flex:1,minWidth:small?85:115}}><div style={{color:"#64748b",fontSize:11,textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:600,marginBottom:4}}>{label}</div><div style={{color:accent,fontSize:small?15:20,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",lineHeight:1.1}}>{value}</div>{sub&&<div style={{color:"#475569",fontSize:11,marginTop:3}}>{sub}</div>}</div>);
+const Sec=({children,icon})=>(<div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,marginTop:24}}><span style={{fontSize:15}}>{icon}</span><h2 style={{margin:0,fontSize:14,fontWeight:700,color:"#e2e8f0"}}>{children}</h2><div style={{flex:1,height:1,background:"linear-gradient(90deg,rgba(255,255,255,0.07),transparent)"}}/></div>);
 const Ch=({children,height})=>(<div style={{background:"rgba(255,255,255,0.015)",borderRadius:14,border:"1px solid rgba(255,255,255,0.045)",padding:"12px 6px 6px"}}><ResponsiveContainer width="100%" height={height||200}>{children}</ResponsiveContainer></div>);
-const Lg=({items})=>(<div style={{display:"flex",justifyContent:"center",gap:11,padding:"5px 0",fontSize:10,flexWrap:"wrap"}}>{items.map(([l,c])=>(<div key={l} style={{display:"flex",alignItems:"center",gap:3,color:"#94a3b8"}}><div style={{width:5,height:5,borderRadius:2,background:c}}/>{l}</div>))}</div>);
-const Note=({color,children})=>(<div style={{marginTop:7,padding:9,borderRadius:8,background:`${color}08`,border:`1px solid ${color}15`,fontSize:11,color:"#94a3b8",lineHeight:1.5}}>{children}</div>);
-const Row=({label,value,color,bold,note,borderTop})=>(<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:bold?"8px 0":"3px 0",borderTop:borderTop?"1px solid rgba(255,255,255,0.06)":"none",marginTop:borderTop?4:0}}><span style={{fontSize:12,color:bold?"#e2e8f0":"#94a3b8",fontWeight:bold?700:400}}>{label}{note&&<span style={{fontSize:9,color:"#475569",marginLeft:6}}>{note}</span>}</span><span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:bold?14:12,fontWeight:bold?700:600,color:color||"#cbd5e1"}}>{value}</span></div>);
-const Badge=({text,color})=>(<span style={{fontSize:8,padding:"2px 7px",borderRadius:20,fontWeight:700,background:`${color}15`,color,whiteSpace:"nowrap"}}>{text}</span>);
-const Card=({label,value,type,detail})=>(<div style={{padding:"9px 11px",borderRadius:10,background:type==="in"?"rgba(52,211,153,0.04)":"rgba(248,113,113,0.04)",border:`1px solid ${type==="in"?"rgba(52,211,153,0.08)":"rgba(248,113,113,0.08)"}`}}><div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:11,fontWeight:600,color:"#cbd5e1"}}>{label}</span><span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:700,fontSize:12,color:type==="in"?"#34d399":"#f87171"}}>{type==="in"?"+":"−"}{value}</span></div><div style={{fontSize:9,color:"#475569",marginTop:2}}>{detail}</div></div>);
-const xP={tick:{fill:"#64748b",fontSize:10},axisLine:{stroke:"rgba(255,255,255,0.05)"}};
-const yP={tickFormatter:fmtK,tick:{fill:"#64748b",fontSize:9},axisLine:false,tickLine:false};
+const Lg=({items})=>(<div style={{display:"flex",justifyContent:"center",gap:11,padding:"5px 0",fontSize:11,flexWrap:"wrap"}}>{items.map(([l,c])=>(<div key={l} style={{display:"flex",alignItems:"center",gap:3,color:"#94a3b8"}}><div style={{width:5,height:5,borderRadius:2,background:c}}/>{l}</div>))}</div>);
+const Note=({color,children})=>(<div style={{marginTop:7,padding:9,borderRadius:8,background:`${color}08`,border:`1px solid ${color}15`,fontSize:12,color:"#94a3b8",lineHeight:1.5}}>{children}</div>);
+const Row=({label,value,color,bold,note,borderTop})=>(<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:bold?"8px 0":"4px 0",borderTop:borderTop?"1px solid rgba(255,255,255,0.06)":"none",marginTop:borderTop?4:0}}><span style={{fontSize:13,color:bold?"#e2e8f0":"#94a3b8",fontWeight:bold?700:400}}>{label}{note&&<span style={{fontSize:10,color:"#475569",marginLeft:6}}>{note}</span>}</span><span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:bold?15:13,fontWeight:bold?700:600,color:color||"#cbd5e1"}}>{value}</span></div>);
+const Badge=({text,color})=>(<span style={{fontSize:9,padding:"2px 7px",borderRadius:20,fontWeight:700,background:`${color}15`,color,whiteSpace:"nowrap"}}>{text}</span>);
+const Card=({label,value,type,detail})=>(<div style={{padding:"9px 11px",borderRadius:10,background:type==="in"?"rgba(52,211,153,0.04)":"rgba(248,113,113,0.04)",border:`1px solid ${type==="in"?"rgba(52,211,153,0.08)":"rgba(248,113,113,0.08)"}`}}><div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,fontWeight:600,color:"#cbd5e1"}}>{label}</span><span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:700,fontSize:13,color:type==="in"?"#34d399":"#f87171"}}>{type==="in"?"+":"−"}{value}</span></div><div style={{fontSize:10,color:"#475569",marginTop:2}}>{detail}</div></div>);
+const xP={tick:{fill:"#64748b",fontSize:11},axisLine:{stroke:"rgba(255,255,255,0.05)"}};
+const yP={tickFormatter:fmtK,tick:{fill:"#64748b",fontSize:10},axisLine:false,tickLine:false};
 const gd=<CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)"/>;
 
 // ─── ALL DATA ────────────────────────────────────────────────────────────────
@@ -54,7 +54,7 @@ const tabGroups=[
   {label:"Summary",  tabs:[{id:"overview",l:"📊 Overview"},{id:"planner",l:"🎛️ Planner"}]},
   {label:"Assets",   tabs:[{id:"networth",l:"💰 Net Worth"},{id:"property",l:"🏠 Property"}]},
   {label:"Spending", tabs:[{id:"committed",l:"📌 Committed"},{id:"health",l:"💊 Health"},{id:"variable",l:"🛒 Variable"},{id:"paypal",l:"💳 PayPal"},{id:"savings",l:"🏦 Savings"}]},
-  {label:"Insights", tabs:[{id:"insights",l:"💡 Insights"},{id:"deep",l:"🔬 Deep Dive"},{id:"trend",l:"📉 Trend"},{id:"subs",l:"📱 Subs"}]},
+  {label:"Insights", tabs:[{id:"insights",l:"💡 Insights"},{id:"deep",l:"🔬 Deep Dive"},{id:"trend",l:"📉 Trend"},{id:"subs",l:"📱 Subs"},{id:"heatmap",l:"📅 Heatmap"},{id:"search",l:"🔍 Search"}]},
   {label:"Planning", tabs:[{id:"tax",l:"💸 Tax"},{id:"compare",l:"⚖️ Compare"},{id:"growth",l:"🌱 Growth"}]},
   {label:"System",   tabs:[{id:"settings",l:"⚙️ Settings"}]},
 ];
@@ -146,6 +146,16 @@ function DashboardInner() {
   const [gwTopRows,  setGwTopRows]  = useState(null);
   const [srcStatus, setSrcStatus] = useState({ up: 'idle', pp: 'idle', gw: 'idle', cs: 'idle' });
   const [srcError,  setSrcError]  = useState({ up: '', pp: '', gw: '', cs: '' });
+  const [isMobile,  setIsMobile]  = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
+  const [menuOpen,  setMenuOpen]  = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchCat,   setSearchCat]   = useState('all');
+
+  useEffect(() => {
+    const h = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', h);
+    return () => window.removeEventListener('resize', h);
+  }, []);
 
   useEffect(() => {
     if (!sheetConfig.upbankUrl) return;
@@ -326,28 +336,83 @@ function DashboardInner() {
   })();
 
   const surplusColor = plan.surplus >= 200 ? "#34d399" : plan.surplus >= 0 ? "#fbbf24" : "#f87171";
+  const dailyTotals  = upData?.dailyTotals  ?? {};
+  const transactions = upData?.transactions ?? [];
+  const filteredTxs  = useMemo(() => transactions.filter(tx => {
+    const matchQ = !searchQuery || tx.desc.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchC = searchCat === 'all' || tx.cat === searchCat;
+    return matchQ && matchC;
+  }), [transactions, searchQuery, searchCat]);
+
+  const healthScore = useMemo(() => {
+    const recent = pnl.slice(-3);
+    const avgIncome = recent.reduce((s,r) => s+r.i, 0) / (recent.length || 1);
+    const avgNet    = recent.reduce((s,r) => s+r.n, 0) / (recent.length || 1);
+    const savingsRate = Math.max(0, avgNet / (avgIncome || 1));
+    const positiveMonths = pnl.filter(r => r.n > 0).length / (pnl.length || 1);
+    const latestMort = mortBal.at(-1) ?? {};
+    const totalDebt = (latestMort.main || 0) + (latestMort.top || 0);
+    const debtScore = Math.max(0, 1 - totalDebt / 800000);
+    const portfolioVal = shares.reduce((s,r) => s+(r.value||0), 0);
+    const hasInvestments = portfolioVal > 1000;
+    const s1 = Math.min(35, savingsRate * 175);
+    const s2 = positiveMonths * 30;
+    const s3 = debtScore * 20;
+    const s4 = hasInvestments ? 15 : 0;
+    const total = Math.round(s1 + s2 + s3 + s4);
+    const grade = total >= 80 ? 'A' : total >= 65 ? 'B' : total >= 50 ? 'C' : total >= 35 ? 'D' : 'F';
+    const color = total >= 80 ? '#34d399' : total >= 65 ? '#60a5fa' : total >= 50 ? '#fbbf24' : '#f87171';
+    return { total, grade, color, s1, s2, s3, s4, savingsRate, positiveMonths };
+  }, [pnl, mortBal, shares]);
+
+  const SidebarContent = ({ onSelect }) => (
+    <>
+      <div style={{ padding: "0 10px", marginBottom: 24 }}>
+        <h1 style={{ margin: "0 0 4px", fontSize: 17, fontWeight: 700, color: "#f1f5f9", lineHeight: 1.3 }}>Financial Dashboard</h1>
+        <div style={{ color: "#475569", fontSize: 11 }}>Jul 2025 — Feb 2026 · AUD</div>
+      </div>
+      {tabGroups.map(group => (
+        <div key={group.label} style={{ marginBottom: 2 }}>
+          <div style={{ fontSize: 10, color: "#334155", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700, padding: "10px 10px 4px" }}>{group.label}</div>
+          {group.tabs.map(t => (
+            <button key={t.id} onClick={() => { setTab(t.id); onSelect && onSelect(); }} style={{ display: "block", width: "100%", padding: "8px 10px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "inherit", textAlign: "left", background: tab === t.id ? "rgba(96,165,250,0.12)" : "transparent", color: tab === t.id ? "#93c5fd" : "#64748b" }}>{t.l}</button>
+          ))}
+        </div>
+      ))}
+    </>
+  );
 
   return (
     <div style={{ fontFamily: "'Instrument Sans',-apple-system,sans-serif", background: "#0b0b17", color: "#e2e8f0", minHeight: "100vh", display: "flex" }}>
       <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
       <style>{`input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#e2e8f0;cursor:pointer;border:2px solid #0b0b17;box-shadow:0 0 6px rgba(96,165,250,0.5)} input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#e2e8f0;cursor:pointer;border:2px solid #0b0b17}`}</style>
-      {/* ═══ SIDEBAR ═══ */}
-      <div style={{ width: 215, flexShrink: 0, background: "rgba(255,255,255,0.015)", borderRight: "1px solid rgba(255,255,255,0.05)", padding: "22px 12px 48px", display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh", overflowY: "auto" }}>
-        <div style={{ padding: "0 10px", marginBottom: 24 }}>
-          <h1 style={{ margin: "0 0 4px", fontSize: 17, fontWeight: 700, color: "#f1f5f9", lineHeight: 1.3 }}>Financial Dashboard</h1>
-          <div style={{ color: "#475569", fontSize: 11 }}>Jul 2025 — Feb 2026 · AUD</div>
+
+      {/* ═══ DESKTOP SIDEBAR ═══ */}
+      {!isMobile && (
+        <div style={{ width: 215, flexShrink: 0, background: "rgba(255,255,255,0.015)", borderRight: "1px solid rgba(255,255,255,0.05)", padding: "22px 12px 48px", display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh", overflowY: "auto" }}>
+          <SidebarContent />
         </div>
-        {tabGroups.map(group => (
-          <div key={group.label} style={{ marginBottom: 2 }}>
-            <div style={{ fontSize: 9.5, color: "#334155", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700, padding: "10px 10px 4px" }}>{group.label}</div>
-            {group.tabs.map(t => (
-              <button key={t.id} onClick={() => setTab(t.id)} style={{ display: "block", width: "100%", padding: "8px 10px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "inherit", textAlign: "left", background: tab === t.id ? "rgba(96,165,250,0.12)" : "transparent", color: tab === t.id ? "#93c5fd" : "#64748b" }}>{t.l}</button>
-            ))}
-          </div>
-        ))}
-      </div>
+      )}
+
+      {/* ═══ MOBILE TOP BAR ═══ */}
+      {isMobile && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, height: 52, background: "#0d0d1f", borderBottom: "1px solid rgba(255,255,255,0.07)", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", zIndex: 100 }}>
+          <span style={{ fontSize: 15, fontWeight: 700, color: "#f1f5f9" }}>Financial Dashboard</span>
+          <button onClick={() => setMenuOpen(o => !o)} style={{ background: "none", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "#94a3b8", fontSize: 18, width: 38, height: 38, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            {menuOpen ? "✕" : "☰"}
+          </button>
+        </div>
+      )}
+
+      {/* ═══ MOBILE MENU OVERLAY ═══ */}
+      {isMobile && menuOpen && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 99, background: "#0b0b17", overflowY: "auto", padding: "64px 12px 48px" }}>
+          <SidebarContent onSelect={() => setMenuOpen(false)} />
+        </div>
+      )}
+
       {/* ═══ MAIN CONTENT ═══ */}
-      <div style={{ flex: 1, padding: "22px 24px 48px", minWidth: 0 }}>
+      <div style={{ flex: 1, padding: isMobile ? "64px 16px 48px" : "22px 24px 48px", minWidth: 0 }}>
 
       {/* ═══ PLANNER ═══ */}
       {tab === "planner" && (<div>
@@ -445,6 +510,43 @@ function DashboardInner() {
       {/* ═══ OVERVIEW ═══ */}
       {tab === "overview" && (<div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><St label="Net Worth" value="$304,630" accent="#34d399" /><St label="Surplus" value={"$" + DISC.toLocaleString()} sub="Forward" accent="#fbbf24" /><St label="Debt" value="$427,922" accent="#f87171" /></div>
+
+        {/* Financial Health Score */}
+        <div style={{ marginTop: 14, background: "linear-gradient(135deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))", border: `1px solid ${healthScore.color}22`, borderRadius: 16, padding: "16px 20px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+            <div style={{ position: "relative", flexShrink: 0 }}>
+              <svg width={80} height={80} viewBox="0 0 80 80">
+                <circle cx={40} cy={40} r={32} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={7} />
+                <circle cx={40} cy={40} r={32} fill="none" stroke={healthScore.color} strokeWidth={7}
+                  strokeDasharray={`${(healthScore.total / 100) * 201} 201`}
+                  strokeLinecap="round" transform="rotate(-90 40 40)" style={{ transition: "stroke-dasharray 0.6s ease" }} />
+              </svg>
+              <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ fontSize: 20, fontWeight: 800, color: healthScore.color, fontFamily: "'JetBrains Mono',monospace", lineHeight: 1 }}>{healthScore.total}</div>
+                <div style={{ fontSize: 11, color: "#475569", fontWeight: 600 }}>{healthScore.grade}</div>
+              </div>
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#f1f5f9", marginBottom: 10 }}>Financial Health Score</div>
+              {[
+                { label: "Savings rate", val: healthScore.s1, max: 35, color: "#34d399" },
+                { label: "Surplus consistency", val: healthScore.s2, max: 30, color: "#60a5fa" },
+                { label: "Debt ratio", val: healthScore.s3, max: 20, color: "#a78bfa" },
+                { label: "Investing", val: healthScore.s4, max: 15, color: "#fbbf24" },
+              ].map(({ label, val, max, color }) => (
+                <div key={label} style={{ marginBottom: 6 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#64748b", marginBottom: 2 }}>
+                    <span>{label}</span><span style={{ color }}>{Math.round(val)}/{max}</span>
+                  </div>
+                  <div style={{ height: 4, borderRadius: 2, background: "rgba(255,255,255,0.06)" }}>
+                    <div style={{ height: "100%", borderRadius: 2, background: color, width: `${(val / max) * 100}%`, transition: "width 0.5s ease" }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
         <Sec icon="📊">Cash Flow</Sec>
         <Ch height={210}><ComposedChart data={pnl.map(d => ({ month: d.m, income: d.i, spending: d.s, net: d.n }))} margin={{ top: 5, right: 12, bottom: 5, left: 4 }}>{gd}<XAxis dataKey="month" {...xP} /><YAxis {...yP} /><Tooltip content={<Tip />} /><Bar dataKey="income" name="Income" fill="#34d399" radius={[3, 3, 0, 0]} barSize={18} opacity={0.7} /><Bar dataKey="spending" name="Spending" fill="#f87171" radius={[3, 3, 0, 0]} barSize={18} opacity={0.5} /><Line dataKey="net" name="Net" stroke="#fbbf24" strokeWidth={2.5} dot={{ fill: "#fbbf24", r: 3.5 }} /><ReferenceLine y={0} stroke="rgba(255,255,255,0.1)" /></ComposedChart></Ch>
         <Sec icon="💡">Waterfall</Sec>
@@ -761,6 +863,144 @@ function DashboardInner() {
           })}
         </div>
         <Note color="#fbbf24"><span style={{ color: "#fbbf24", fontWeight: 700 }}>Shares assumed 7%/yr. </span>Debt savings are guaranteed; shares returns are not. 10-year horizon.</Note>
+      </div>)}
+
+      {/* ═══ HEATMAP ═══ */}
+      {tab === "heatmap" && (<div>
+        {!upData ? (
+          <div style={{ textAlign: "center", padding: "60px 20px", color: "#475569" }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>📅</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "#64748b", marginBottom: 8 }}>No data yet</div>
+            <div style={{ fontSize: 13 }}>Connect your Up Bank CSV in the ⚙️ Settings tab to see your daily spending heatmap.</div>
+          </div>
+        ) : (() => {
+          const { minDate, maxDate } = upData.dateRange;
+          // Build list of all days in range
+          const days = [];
+          const cur = new Date(minDate); cur.setHours(0,0,0,0);
+          const end = new Date(maxDate); end.setHours(0,0,0,0);
+          // Pad to previous Monday
+          while (cur.getDay() !== 1) cur.setDate(cur.getDate() - 1);
+          while (cur <= end) { days.push(new Date(cur)); cur.setDate(cur.getDate() + 1); }
+          // Pad to end of week
+          while (days[days.length-1].getDay() !== 0) { days.push(new Date(cur)); cur.setDate(cur.getDate() + 1); }
+
+          const maxSpend = Math.max(...Object.values(dailyTotals), 1);
+          const toKey = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+          const DAYS = ['M','T','W','T','F','S','S'];
+          const weeks = [];
+          for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i+7));
+
+          // Month label positions
+          const monthLabels = [];
+          weeks.forEach((wk, wi) => {
+            const d = wk[0];
+            if (wi === 0 || d.getDate() <= 7) monthLabels[wi] = d.toLocaleString('default',{month:'short'});
+          });
+
+          const allAmounts = Object.values(dailyTotals);
+          const totalSpend = allAmounts.reduce((s,v)=>s+v,0);
+          const daysWithSpend = allAmounts.length;
+          const maxDay = Object.entries(dailyTotals).sort((a,b)=>b[1]-a[1])[0];
+
+          const [hoverDay, setHoverDay] = useState(null);
+
+          return (<>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+              <St label="Total period spend" value={"$" + Math.round(totalSpend).toLocaleString()} accent="#f87171" />
+              <St label="Highest day" value={maxDay ? "$" + Math.round(maxDay[1]).toLocaleString() : "—"} sub={maxDay ? maxDay[0] : ""} accent="#fbbf24" />
+              <St label="Avg active day" value={"$" + (daysWithSpend > 0 ? Math.round(totalSpend/daysWithSpend).toLocaleString() : "0")} accent="#60a5fa" />
+            </div>
+            <div style={{ background: "rgba(255,255,255,0.015)", borderRadius: 14, border: "1px solid rgba(255,255,255,0.045)", padding: 16, overflowX: "auto" }}>
+              <div style={{ display: "flex", gap: 3, marginBottom: 4, paddingLeft: 20 }}>
+                {weeks.map((_, wi) => (
+                  <div key={wi} style={{ width: 14, fontSize: 9, color: "#334155", textAlign: "center", flexShrink: 0 }}>
+                    {monthLabels[wi] || ""}
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 4 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 3, marginRight: 2 }}>
+                  {DAYS.map((d,i) => <div key={i} style={{ height: 14, fontSize: 9, color: "#475569", lineHeight: "14px" }}>{d}</div>)}
+                </div>
+                {weeks.map((wk, wi) => (
+                  <div key={wi} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                    {wk.map((day, di) => {
+                      const key = toKey(day);
+                      const amt = dailyTotals[key] || 0;
+                      const intensity = amt > 0 ? 0.12 + (amt / maxSpend) * 0.88 : 0;
+                      const isInRange = day >= minDate && day <= maxDate;
+                      return (
+                        <div key={di}
+                          onMouseEnter={() => setHoverDay({ key, amt })}
+                          onMouseLeave={() => setHoverDay(null)}
+                          style={{ width: 14, height: 14, borderRadius: 3, flexShrink: 0, cursor: amt > 0 ? "pointer" : "default",
+                            background: !isInRange ? "transparent" : amt > 0 ? `rgba(239,68,68,${intensity})` : "rgba(255,255,255,0.04)",
+                            border: hoverDay?.key === key ? "1px solid rgba(239,68,68,0.8)" : "1px solid transparent",
+                          }} />
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, fontSize: 10, color: "#475569" }}>
+                <span>Less</span>
+                {[0.1,0.3,0.5,0.7,0.9].map(v => <div key={v} style={{ width: 12, height: 12, borderRadius: 2, background: `rgba(239,68,68,${v})` }} />)}
+                <span>More</span>
+              </div>
+              {hoverDay && hoverDay.amt > 0 && (
+                <div style={{ marginTop: 8, fontSize: 12, color: "#94a3b8" }}>
+                  <span style={{ color: "#e2e8f0", fontWeight: 600 }}>{hoverDay.key}</span> — <span style={{ color: "#f87171", fontFamily: "'JetBrains Mono',monospace" }}>${Math.round(hoverDay.amt).toLocaleString()}</span> spent
+                </div>
+              )}
+            </div>
+          </>);
+        })()}
+      </div>)}
+
+      {/* ═══ SEARCH ═══ */}
+      {tab === "search" && (<div>
+        {!upData ? (
+          <div style={{ textAlign: "center", padding: "60px 20px", color: "#475569" }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>🔍</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "#64748b", marginBottom: 8 }}>No data yet</div>
+            <div style={{ fontSize: 13 }}>Connect your Up Bank CSV in the ⚙️ Settings tab to search your transactions.</div>
+          </div>
+        ) : (<>
+          <input
+            type="text" placeholder="Search transactions…" value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            style={{ width: "100%", boxSizing: "border-box", padding: "11px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "#e2e8f0", fontSize: 14, fontFamily: "inherit", outline: "none", marginBottom: 10 }}
+          />
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+            {['all','amazon','paypal','restaurant','takeaway','grocery','health','transport','toll','sub'].map(cat => (
+              <button key={cat} onClick={() => setSearchCat(cat)}
+                style={{ padding: "5px 12px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: "inherit",
+                  background: searchCat === cat ? "rgba(96,165,250,0.2)" : "rgba(255,255,255,0.05)",
+                  color: searchCat === cat ? "#93c5fd" : "#64748b" }}>
+                {cat === 'all' ? 'All' : cat.charAt(0).toUpperCase() + cat.slice(1)}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, fontSize: 12, color: "#475569" }}>
+            <span>{filteredTxs.length} transactions</span>
+            <span style={{ fontFamily: "'JetBrains Mono',monospace", color: "#f87171" }}>
+              ${filteredTxs.reduce((s,t)=>s+t.amount,0).toLocaleString(undefined,{maximumFractionDigits:0})} total
+            </span>
+          </div>
+          <div style={{ background: "rgba(255,255,255,0.015)", borderRadius: 14, border: "1px solid rgba(255,255,255,0.045)", overflow: "hidden", maxHeight: 520, overflowY: "auto" }}>
+            {filteredTxs.length === 0 ? (
+              <div style={{ padding: 24, textAlign: "center", color: "#475569", fontSize: 13 }}>No matching transactions</div>
+            ) : filteredTxs.map((tx, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.01)" }}>
+                <div style={{ fontSize: 11, color: "#475569", fontFamily: "'JetBrains Mono',monospace", flexShrink: 0, width: 82 }}>{tx.date}</div>
+                <div style={{ flex: 1, fontSize: 12, color: "#cbd5e1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tx.desc}</div>
+                <Badge text={tx.cat || "other"} color="#60a5fa" />
+                <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13, fontWeight: 700, color: "#f87171", flexShrink: 0 }}>${tx.amount.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
+              </div>
+            ))}
+          </div>
+        </>)}
       </div>)}
 
       {/* ═══ SETTINGS ═══ */}

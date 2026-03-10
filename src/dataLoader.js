@@ -232,9 +232,34 @@ export function processUpBank(rows) {
   const dateRange = {
     start: `${MONTH_NAMES[minDate.getMonth()]} ${minDate.getFullYear()}`,
     end:   `${MONTH_NAMES[maxDate.getMonth()]} ${maxDate.getFullYear()}`,
+    minDate, maxDate,
   };
 
-  return { pnl, amz, food, hm, hcats, dow, cd, bva, dateRange, rowCount: txs.length };
+  // Daily spending totals for heatmap
+  const dailyTotals = {};
+  for (const tx of txs) {
+    if (!tx.isIncome) {
+      const d = tx.date;
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      dailyTotals[key] = (dailyTotals[key] || 0) + tx.absAmt;
+    }
+  }
+
+  // Individual transactions for search (spending only, newest first)
+  const transactions = txs
+    .filter(tx => !tx.isIncome)
+    .map(tx => {
+      const d = tx.date;
+      return {
+        date: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`,
+        desc: tx.desc,
+        amount: tx.absAmt,
+        cat: tx.cat,
+      };
+    })
+    .sort((a, b) => b.date.localeCompare(a.date));
+
+  return { pnl, amz, food, hm, hcats, dow, cd, bva, dateRange, dailyTotals, transactions, rowCount: txs.length };
 }
 
 // ─── PAYPAL ──────────────────────────────────────────────────────────────────
