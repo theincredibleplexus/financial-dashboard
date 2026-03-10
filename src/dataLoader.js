@@ -338,9 +338,10 @@ export function processPayPal(rows) {
 function processGatewayLoan(rows) {
   if (!rows || rows.length === 0) return {};
   const sample = rows[0];
-  const dateCol = findCol(sample, ['date', 'transaction date', 'value date']);
+  const dateCol = findCol(sample, ['entered date', 'transaction date', 'value date', 'date', 'effective date']);
   const balCol  = findCol(sample, ['balance', 'closing balance', 'running balance']);
-  if (!dateCol || !balCol) return {};
+  if (!balCol) return {};
+  if (!dateCol) return {};
 
   const byMonth = {};
   rows.forEach(r => {
