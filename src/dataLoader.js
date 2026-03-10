@@ -19,9 +19,9 @@ function parseCSVLine(line) {
 }
 
 function parseCSV(text) {
-  const lines = text.trim().split(/\r?\n/);
+  const lines = text.replace(/^\uFEFF/, '').trim().split(/\r?\n/);
   if (lines.length < 2) return [];
-  const headers = parseCSVLine(lines[0]).map(h => h.trim());
+  const headers = parseCSVLine(lines[0]).map(h => h.trim().replace(/^\uFEFF/, ''));
   return lines.slice(1).map(line => {
     const values = parseCSVLine(line);
     const row = {};

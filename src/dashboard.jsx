@@ -161,7 +161,11 @@ function DashboardInner() {
     if (!sheetConfig.upbankUrl) return;
     setSrcStatus(s => ({ ...s, up: 'loading' }));
     fetchCSV(sheetConfig.upbankUrl)
-      .then(rows => { setUpData(processUpBank(rows)); setSrcStatus(s => ({ ...s, up: 'loaded' })); })
+      .then(rows => {
+        const result = processUpBank(rows);
+        if (!result) { setSrcError(s => ({ ...s, up: 'Could not parse CSV — check column headers match Up Bank export' })); setSrcStatus(s => ({ ...s, up: 'error' })); }
+        else { setUpData(result); setSrcStatus(s => ({ ...s, up: 'loaded' })); }
+      })
       .catch(e   => { setSrcError(s => ({ ...s, up: e.message })); setSrcStatus(s => ({ ...s, up: 'error' })); });
   }, [sheetConfig.upbankUrl]);
 
@@ -169,7 +173,11 @@ function DashboardInner() {
     if (!sheetConfig.paypalUrl) return;
     setSrcStatus(s => ({ ...s, pp: 'loading' }));
     fetchCSV(sheetConfig.paypalUrl)
-      .then(rows => { setPpData(processPayPal(rows)); setSrcStatus(s => ({ ...s, pp: 'loaded' })); })
+      .then(rows => {
+        const result = processPayPal(rows);
+        if (!result) { setSrcError(s => ({ ...s, pp: 'Could not parse CSV — check column headers match PayPal export' })); setSrcStatus(s => ({ ...s, pp: 'error' })); }
+        else { setPpData(result); setSrcStatus(s => ({ ...s, pp: 'loaded' })); }
+      })
       .catch(e   => { setSrcError(s => ({ ...s, pp: e.message })); setSrcStatus(s => ({ ...s, pp: 'error' })); });
   }, [sheetConfig.paypalUrl]);
 
@@ -199,7 +207,11 @@ function DashboardInner() {
     if (!sheetConfig.commsecUrl) return;
     setSrcStatus(s => ({ ...s, cs: 'loading' }));
     fetchCSV(sheetConfig.commsecUrl)
-      .then(rows => { setCsData(processCommSec(rows)); setSrcStatus(s => ({ ...s, cs: 'loaded' })); })
+      .then(rows => {
+        const result = processCommSec(rows);
+        if (!result) { setSrcError(s => ({ ...s, cs: 'Could not parse CSV — check column headers match CommSec export' })); setSrcStatus(s => ({ ...s, cs: 'error' })); }
+        else { setCsData(result); setSrcStatus(s => ({ ...s, cs: 'loaded' })); }
+      })
       .catch(e   => { setSrcError(s => ({ ...s, cs: e.message })); setSrcStatus(s => ({ ...s, cs: 'error' })); });
   }, [sheetConfig.commsecUrl]);
 
