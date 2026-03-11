@@ -6,7 +6,16 @@
       "WebFetch(domain:docs.google.com)",
       "WebFetch(domain:doc-0c-98-sheets.googleusercontent.com)",
       "Bash(grep -r \"Ray\\\\|Safiye\\\\|Saffiye\\\\|saffyup\\\\|1234\\\\|377922\\\\|50000\\\\|Leam\\\\|gateway\\\\|commsec\" /c/Users/r.airey/Desktop/financial-dashboard/ --include=*.md --include=*.html)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(/c/Users/Raymond/AppData/Roaming/npm/npx.cmd astro:*)",
+      "Read(//c/Users/Raymond/.bun/bin/**)",
+      "Read(//c/Users/Raymond/**)",
+      "Bash(\"/c/Program Files/nodejs/npx.cmd\" vite build)",
+      "Bash(cmd.exe /c \"npx vite build 2>&1\")",
+      "Bash(cmd.exe /c \"cd C:\\\\Comma\\\\financial-dashboard && npx vite build 2>&1\")",
+      "Bash(cmd.exe /c \"npx vite build\")",
+      "Bash(echo \"exit: $?\")",
+      "Bash(node_modules/.bin/vite build:*)"
     ]
   }
 }

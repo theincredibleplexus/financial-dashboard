@@ -506,6 +506,7 @@ const Sec=({children,icon})=>(<div style={{display:"flex",alignItems:"center",ga
 const Ch=({children,height})=>(<div style={{background:"rgba(255,255,255,0.015)",borderRadius:14,border:"1px solid rgba(255,255,255,0.045)",padding:"12px 6px 6px"}}><ResponsiveContainer width="100%" height={height||200}>{children}</ResponsiveContainer></div>);
 const Lg=({items})=>(<div style={{display:"flex",justifyContent:"center",gap:11,padding:"5px 0",fontSize:11,flexWrap:"wrap"}}>{items.map(([l,c])=>(<div key={l} style={{display:"flex",alignItems:"center",gap:3,color:"#94a3b8"}}><div style={{width:5,height:5,borderRadius:2,background:c}}/>{l}</div>))}</div>);
 const Note=({color,children})=>(<div style={{marginTop:7,padding:9,borderRadius:8,background:`${color}08`,border:`1px solid ${color}15`,fontSize:12,color:"#94a3b8",lineHeight:1.5}}>{children}</div>);
+const ProBadge=({title,description,cta})=>(<div style={{padding:'16px 20px',borderRadius:14,background:'linear-gradient(145deg, rgba(79,110,247,0.08) 0%, rgba(124,58,237,0.04) 100%)',border:'1px solid rgba(79,110,247,0.15)',marginTop:8,marginBottom:8}}><div style={{display:'flex',alignItems:'center',gap:6,marginBottom:6}}><span style={{fontSize:9,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.1em',color:'#7c3aed',background:'rgba(124,58,237,0.12)',padding:'2px 8px',borderRadius:4}}>Pro</span><span style={{fontSize:12,fontWeight:600,color:'#e2e8f0'}}>{title}</span></div>{description&&<div style={{fontSize:11,color:'#94a3b8',lineHeight:1.5,marginBottom:cta?10:0}}>{description}</div>}{cta&&<button onClick={cta.onClick} style={{fontSize:11,fontWeight:600,color:'#4f6ef7',background:'none',border:'none',cursor:'pointer',padding:0,fontFamily:'inherit'}}>{cta.label} →</button>}</div>);
 const Row=({label,value,color,bold,note,borderTop})=>(<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:bold?"8px 0":"4px 0",borderTop:borderTop?"1px solid rgba(255,255,255,0.06)":"none",marginTop:borderTop?4:0}}><span style={{fontSize:13,color:bold?"#e2e8f0":"#94a3b8",fontWeight:bold?700:400}}>{label}{note&&<span style={{fontSize:10,color:"#475569",marginLeft:6}}>{note}</span>}</span><span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:bold?15:13,fontWeight:bold?700:600,color:color||"#cbd5e1"}}>{value}</span></div>);
 const Badge=({text,color})=>(<span style={{fontSize:9,padding:"2px 7px",borderRadius:20,fontWeight:700,background:`${color}15`,color,whiteSpace:"nowrap"}}>{text}</span>);
 
@@ -560,7 +561,7 @@ const tabGroups=[
   {label:"Summary",  tabs:[{id:"overview",l:"📊 Overview"},{id:"planner",l:"🎛️ Planner"}]},
   {label:"Assets",   tabs:[{id:"networth",l:"💰 Net Worth"},{id:"property",l:"🏠 Property"}]},
   {label:"Spending", tabs:[{id:"committed",l:"📌 Committed"},{id:"health",l:"💊 Health"},{id:"variable",l:"🛒 Variable"},{id:"paypal",l:"💳 PayPal"},{id:"savings",l:"🏦 Savings"}]},
-  {label:"Insights", tabs:[{id:"insights",l:"💡 Insights"},{id:"deep",l:"🔬 Deep Dive"},{id:"trend",l:"📉 Trend"},{id:"subs",l:"📱 Subs"},{id:"heatmap",l:"📅 Heatmap"},{id:"search",l:"🔍 Search"},{id:"aichat",l:"🤖 AI Chat"}]},
+  {label:"Insights", tabs:[{id:"insights",l:"💡 Insights"},{id:"deep",l:"🔬 Deep Dive"},{id:"trend",l:"📉 Trend"},{id:"subs",l:"📱 Subs"},{id:"heatmap",l:"📅 Heatmap"},{id:"search",l:"🔍 Search"}]},
   {label:"Planning", tabs:[{id:"goals",l:"🎯 Goals"},{id:"tax",l:"💸 Tax"},{id:"compare",l:"⚖️ Compare"},{id:"growth",l:"🌱 Growth"}]},
   {label:"System",   tabs:[{id:"settings",l:"⚙️ Settings"}]},
 ];
@@ -1084,6 +1085,9 @@ function DashboardInner() {
   const [nwExpandedSnaps,      setNwExpandedSnaps]      = useState(() => new Set());
   const [nwDeleteConfirm,      setNwDeleteConfirm]      = useState(null);  // snap id pending delete
 
+  // ─── TIER STATE (wired to auth in Session 8) ──────────────────────────────
+  const [userTier, setUserTier] = useState('free'); // 'free' | 'pro' | 'lifetime'
+
   // ─── USER RULES STATE ─────────────────────────────────────────────────────
   const [userRules, setUserRules] = useState(() => {
     try { return JSON.parse(localStorage.getItem('comma_user_rules') || '{}'); }
@@ -1135,6 +1139,10 @@ function DashboardInner() {
     setAiTestStatus(null);
   }
 
+  // ── AI Chat overlay state ──
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatHasUnread, setChatHasUnread] = useState(false);
+  const [fabPulsed, setFabPulsed] = useState(false);
   // ── AI Chat state ──
   const [chatMessages, setChatMessages] = useState([]); // [{role:'user'|'assistant', text:string}]
   const [chatInput, setChatInput] = useState('');
@@ -1188,6 +1196,17 @@ function DashboardInner() {
       sendChatMessage(next); // eslint-disable-line react-hooks/exhaustive-deps
     }
   }, [chatStreaming]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Mark unread dot when AI finishes a response and panel is closed
+  useEffect(() => {
+    if (!chatStreaming && chatMessages.length > 0 && chatMessages[chatMessages.length - 1]?.role === 'assistant' && !chatOpen) {
+      setChatHasUnread(true);
+    }
+  }, [chatStreaming]); // eslint-disable-line react-hooks/exhaustive-deps
+  // FAB pulse: fire once on mount, then stop
+  useEffect(() => {
+    const t = setTimeout(() => setFabPulsed(true), 300);
+    return () => clearTimeout(t);
+  }, []);
 
   async function testAiConnection() {
     if (!aiKey) return;
@@ -1662,7 +1681,7 @@ function DashboardInner() {
   return (
     <div style={{ fontFamily: "'Instrument Sans',-apple-system,sans-serif", background: "#0b0b17", color: "#e2e8f0", minHeight: "100vh", display: "flex" }}>
       <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
-      <style>{`input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#e2e8f0;cursor:pointer;border:2px solid #0b0b17;box-shadow:0 0 6px rgba(96,165,250,0.5)} input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#e2e8f0;cursor:pointer;border:2px solid #0b0b17}`}</style>
+      <style>{`input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#e2e8f0;cursor:pointer;border:2px solid #0b0b17;box-shadow:0 0 6px rgba(96,165,250,0.5)} input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#e2e8f0;cursor:pointer;border:2px solid #0b0b17} @keyframes chatDot{0%,80%,100%{opacity:0.2}40%{opacity:1}} @keyframes fabPulse{0%,100%{box-shadow:0 4px 20px rgba(79,110,247,0.45),0 2px 8px rgba(0,0,0,0.4)}50%{box-shadow:0 4px 28px rgba(79,110,247,0.75),0 0 0 8px rgba(79,110,247,0.12),0 2px 8px rgba(0,0,0,0.4)}}`}</style>
 
       {/* ═══ DESKTOP SIDEBAR ═══ */}
       {!isMobile && (
@@ -2048,6 +2067,9 @@ function DashboardInner() {
                 </button>
               </div>
             )}
+            {userTier === 'free' && nwSnapshots.length >= 1 && (
+              <ProBadge title="Net Worth Timeline" description="Track your net worth month-over-month. See how your assets and liabilities change over time with an interactive timeline chart." />
+            )}
           </div>
 
           {/* ── Net Worth History Chart ── */}
@@ -2394,33 +2416,59 @@ function DashboardInner() {
         </div>
         <Sec icon="🏆">Scorecard</Sec>
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>{scorecard.map((s, i) => (<div key={i} style={{ width: 68, padding: "7px 5px", borderRadius: 10, background: `${s.cl}08`, border: `1px solid ${s.cl}15`, textAlign: "center" }}><div style={{ fontSize: 8, color: "#64748b" }}>{s.m}</div><div style={{ fontSize: 24, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", color: s.cl, lineHeight: 1 }}>{s.g}</div></div>))}</div>
+        {userTier === 'free' && (
+          <ProBadge title="Historical Analysis" description="Compare spending velocity across months, track your scorecard over time, and see how your compound costs evolve with 12 months of data." />
+        )}
       </div>)}
 
       {/* ═══ TREND ═══ */}
       {tab === "trend" && (<div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {upData ? (
-            <>
-              <St label="Period Net" value={(totalPnlNet>=0?"$":"-$") + Math.abs(totalPnlNet).toLocaleString()} accent={totalPnlNet>=0?"#34d399":"#f87171"} />
-              <St label="Recent Avg" value={(recentAvgNet>=0?"+$":"-$") + Math.abs(recentAvgNet).toLocaleString()} sub="/mo" accent={recentAvgNet>=0?"#34d399":"#f87171"} />
-            </>
-          ) : (
-            <>
-              <St label="8-Mo Deficit" value={"-$" + DEMO_DATA.trendStats.deficit8mo.toLocaleString()} accent="#f87171" />
-              <St label="Forward" value={"+" + "$" + DEMO_DATA.trendStats.forward} accent="#34d399" />
-            </>
-          )}
-        </div>
-        <Sec icon="📉">Amazon + PayPal</Sec>
-        <Ch height={190}><BarChart data={cd.map(d => ({ month: d.m, Amazon: d.a, PayPal: d.p }))}>{gd}<XAxis dataKey="month" {...xP} /><YAxis {...yP} /><Tooltip content={<Tip />} /><Bar dataKey="Amazon" stackId="a" fill="#f97316" barSize={24} /><Bar dataKey="PayPal" stackId="a" fill="#6366f1" radius={[3, 3, 0, 0]} barSize={24} /></BarChart></Ch>
-        <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7 }}>
-          <div style={{ padding: 12, borderRadius: 10, background: "rgba(248,113,113,0.04)", border: "1px solid rgba(248,113,113,0.08)" }}><div style={{ fontSize: 9, color: "#f87171", textTransform: "uppercase", fontWeight: 700 }}>Jul—Dec</div><div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 18, fontWeight: 700, color: "#f87171" }}>{"$" + DEMO_DATA.trendStats.julDec.toLocaleString()}</div></div>
-          <div style={{ padding: 12, borderRadius: 10, background: "rgba(52,211,153,0.04)", border: "1px solid rgba(52,211,153,0.08)" }}><div style={{ fontSize: 9, color: "#34d399", textTransform: "uppercase", fontWeight: 700 }}>Jan—Feb</div><div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 18, fontWeight: 700, color: "#34d399" }}>{"$" + DEMO_DATA.trendStats.janFeb}</div></div>
-        </div>
-        <Sec icon="✅">Actioned</Sec>
-        <div style={{ display: "grid", gap: 3 }}>
-          {DEMO_DATA.actioned.map((w, i) => (<div key={i} style={{ padding: "5px 10px", borderRadius: 7, background: "rgba(52,211,153,0.04)", border: "1px solid rgba(52,211,153,0.08)", display: "flex", justifyContent: "space-between" }}><span style={{ fontSize: 10, color: "#cbd5e1" }}>{w.a}</span><span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fontWeight: 700, color: "#34d399" }}>{w.s}/mo</span></div>))}
-        </div>
+        {userTier === 'free' && (
+          <div style={{ position: 'relative', marginBottom: 16 }}>
+            <div style={{ filter: 'blur(5px)', opacity: 0.35, pointerEvents: 'none', userSelect: 'none' }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                {['Period Net','Income','Spending','Savings Rate'].map(l => (
+                  <div key={l} style={{ flex: 1, minWidth: 90, padding: '12px 14px', borderRadius: 12, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                    <div style={{ fontSize: 10, color: '#475569', marginBottom: 4 }}>{l}</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: '#e2e8f0', fontFamily: "'JetBrains Mono',monospace" }}>$—</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ height: 160, borderRadius: 12, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', marginBottom: 8 }} />
+              <div style={{ height: 120, borderRadius: 12, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }} />
+            </div>
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 16px' }}>
+              <div style={{ width: '100%', maxWidth: 360 }}>
+                <ProBadge title="Spending Trends" description="Month-over-month comparisons, seasonal patterns, and actionable insights. See what's improving and what needs attention." />
+              </div>
+            </div>
+          </div>
+        )}
+        {userTier !== 'free' && (<>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {upData ? (
+              <>
+                <St label="Period Net" value={(totalPnlNet>=0?"$":"-$") + Math.abs(totalPnlNet).toLocaleString()} accent={totalPnlNet>=0?"#34d399":"#f87171"} />
+                <St label="Recent Avg" value={(recentAvgNet>=0?"+$":"-$") + Math.abs(recentAvgNet).toLocaleString()} sub="/mo" accent={recentAvgNet>=0?"#34d399":"#f87171"} />
+              </>
+            ) : (
+              <>
+                <St label="8-Mo Deficit" value={"-$" + DEMO_DATA.trendStats.deficit8mo.toLocaleString()} accent="#f87171" />
+                <St label="Forward" value={"+" + "$" + DEMO_DATA.trendStats.forward} accent="#34d399" />
+              </>
+            )}
+          </div>
+          <Sec icon="📉">Amazon + PayPal</Sec>
+          <Ch height={190}><BarChart data={cd.map(d => ({ month: d.m, Amazon: d.a, PayPal: d.p }))}>{gd}<XAxis dataKey="month" {...xP} /><YAxis {...yP} /><Tooltip content={<Tip />} /><Bar dataKey="Amazon" stackId="a" fill="#f97316" barSize={24} /><Bar dataKey="PayPal" stackId="a" fill="#6366f1" radius={[3, 3, 0, 0]} barSize={24} /></BarChart></Ch>
+          <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7 }}>
+            <div style={{ padding: 12, borderRadius: 10, background: "rgba(248,113,113,0.04)", border: "1px solid rgba(248,113,113,0.08)" }}><div style={{ fontSize: 9, color: "#f87171", textTransform: "uppercase", fontWeight: 700 }}>Jul—Dec</div><div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 18, fontWeight: 700, color: "#f87171" }}>{"$" + DEMO_DATA.trendStats.julDec.toLocaleString()}</div></div>
+            <div style={{ padding: 12, borderRadius: 10, background: "rgba(52,211,153,0.04)", border: "1px solid rgba(52,211,153,0.08)" }}><div style={{ fontSize: 9, color: "#34d399", textTransform: "uppercase", fontWeight: 700 }}>Jan—Feb</div><div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 18, fontWeight: 700, color: "#34d399" }}>{"$" + DEMO_DATA.trendStats.janFeb}</div></div>
+          </div>
+          <Sec icon="✅">Actioned</Sec>
+          <div style={{ display: "grid", gap: 3 }}>
+            {DEMO_DATA.actioned.map((w, i) => (<div key={i} style={{ padding: "5px 10px", borderRadius: 7, background: "rgba(52,211,153,0.04)", border: "1px solid rgba(52,211,153,0.08)", display: "flex", justifyContent: "space-between" }}><span style={{ fontSize: 10, color: "#cbd5e1" }}>{w.a}</span><span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fontWeight: 700, color: "#34d399" }}>{w.s}/mo</span></div>))}
+          </div>
+        </>)}
       </div>)}
 
       {/* ═══ SUBS ═══ */}
@@ -2452,72 +2500,76 @@ function DashboardInner() {
         {goals.length > 0 && (
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 11, color:'#64748b', marginBottom: 6, textTransform:'uppercase', letterSpacing:'0.09em', fontWeight:600 }}>Savings Projection</div>
-            {plan.surplus <= 0 && !hasActualData ? (
-              <Note color="#f87171">Adjust your Planner to increase monthly surplus — projection unavailable</Note>
+            {userTier === 'free' ? (
+              <ProBadge title="Goal Projections" description="See when you'll reach your goals based on your actual savings rate. Track progress with projected completion dates and visual timelines." />
             ) : (
-              <>
-                <Ch height={220}>
-                  <ComposedChart data={goalProjData.data}>
-                    <defs>
-                      {goals.map((g,i) => (
-                        <linearGradient key={g.id} id={`gp_${g.id}`} x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%"  stopColor={GOAL_COLORS[i % GOAL_COLORS.length]} stopOpacity={0.25}/>
-                          <stop offset="95%" stopColor={GOAL_COLORS[i % GOAL_COLORS.length]} stopOpacity={0}/>
-                        </linearGradient>
+              plan.surplus <= 0 && !hasActualData ? (
+                <Note color="#f87171">Adjust your Planner to increase monthly surplus — projection unavailable</Note>
+              ) : (
+                <>
+                  <Ch height={220}>
+                    <ComposedChart data={goalProjData.data}>
+                      <defs>
+                        {goals.map((g,i) => (
+                          <linearGradient key={g.id} id={`gp_${g.id}`} x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%"  stopColor={GOAL_COLORS[i % GOAL_COLORS.length]} stopOpacity={0.25}/>
+                            <stop offset="95%" stopColor={GOAL_COLORS[i % GOAL_COLORS.length]} stopOpacity={0}/>
+                          </linearGradient>
+                        ))}
+                      </defs>
+                      {gd}
+                      <XAxis dataKey="month" {...xP} interval="preserveStartEnd"/>
+                      <YAxis {...yP}/>
+                      <Tooltip content={<Tip/>}/>
+                      {/* Actual savings lines — solid Area (shown when uploaded data exists) */}
+                      {hasActualData && goalPerActual > 0 && goals.map((g,i) => (
+                        <Area key={`act_${g.id}`} type="monotone" dataKey={`${g.id}_act`} name={`${g.emoji} ${g.name} (actual)`}
+                          stroke={GOAL_COLORS[i % GOAL_COLORS.length]} fill={`url(#gp_${g.id})`}
+                          strokeWidth={2.5} dot={false} activeDot={{r:4}}/>
                       ))}
-                    </defs>
-                    {gd}
-                    <XAxis dataKey="month" {...xP} interval="preserveStartEnd"/>
-                    <YAxis {...yP}/>
-                    <Tooltip content={<Tip/>}/>
-                    {/* Actual savings lines — solid Area (shown when uploaded data exists) */}
-                    {hasActualData && goalPerActual > 0 && goals.map((g,i) => (
-                      <Area key={`act_${g.id}`} type="monotone" dataKey={`${g.id}_act`} name={`${g.emoji} ${g.name} (actual)`}
-                        stroke={GOAL_COLORS[i % GOAL_COLORS.length]} fill={`url(#gp_${g.id})`}
-                        strokeWidth={2.5} dot={false} activeDot={{r:4}}/>
-                    ))}
-                    {/* Plan lines — dashed Line when actual data exists, Area otherwise */}
-                    {goals.map((g,i) => hasActualData && plan.surplus > 0 ? (
-                      <Line key={`plan_${g.id}`} type="monotone" dataKey={g.id} name={`${g.emoji} ${g.name} (plan)`}
-                        stroke={GOAL_COLORS[i % GOAL_COLORS.length]} strokeWidth={1.5} strokeDasharray="5 3"
-                        dot={false} activeDot={{r:3}}/>
-                    ) : !hasActualData && plan.surplus > 0 ? (
-                      <Area key={g.id} type="monotone" dataKey={g.id} name={`${g.emoji} ${g.name}`}
-                        stroke={GOAL_COLORS[i % GOAL_COLORS.length]} fill={`url(#gp_${g.id})`}
-                        strokeWidth={2} dot={false} activeDot={{r:4}}/>
-                    ) : null)}
-                    {goals.map((g,i) => (
-                      <ReferenceLine key={`ref_${g.id}`} y={g.targetAmount||0}
-                        stroke={GOAL_COLORS[i % GOAL_COLORS.length]} strokeDasharray="4 4" strokeOpacity={0.5}
-                        label={{value:`${g.emoji} ${(g.targetAmount||0).toLocaleString()}`,fill:GOAL_COLORS[i % GOAL_COLORS.length],fontSize:9,position:'insideTopRight'}}/>
-                    ))}
-                    {/* Plan crossing dots */}
-                    {plan.surplus > 0 && Object.entries(goalProjData.crossings).map(([gid, cross]) => {
-                      const i = goals.findIndex(g2 => g2.id === gid);
-                      if (i < 0) return null;
-                      return <ReferenceDot key={`dot_${gid}`} x={cross.month} y={goals[i].targetAmount||0}
-                        r={5} fill={GOAL_COLORS[i % GOAL_COLORS.length]} stroke="#111127" strokeWidth={2}
-                        label={{value:`✓ ${cross.label}${hasActualData?' (plan)':''}`,fill:GOAL_COLORS[i % GOAL_COLORS.length],fontSize:9,position:'top'}}/>;
-                    })}
-                    {/* Actual crossing dots */}
-                    {hasActualData && goalPerActual > 0 && Object.entries(goalProjData.actualCrossings).map(([gid, cross]) => {
-                      const i = goals.findIndex(g2 => g2.id === gid);
-                      if (i < 0) return null;
-                      return <ReferenceDot key={`actdot_${gid}`} x={cross.month} y={goals[i].targetAmount||0}
-                        r={5} fill={GOAL_COLORS[i % GOAL_COLORS.length]} stroke="#34d399" strokeWidth={2}
-                        label={{value:`✓ ${cross.label} (actual)`,fill:'#34d399',fontSize:9,position:'bottom'}}/>;
-                    })}
-                  </ComposedChart>
-                </Ch>
-                {hasActualData ? (
-                  <div style={{ display:'flex', justifyContent:'center', gap:16, padding:'5px 0', fontSize:11, color:'#64748b', flexWrap:'wrap' }}>
-                    <span style={{ display:'flex', alignItems:'center', gap:4 }}><span style={{ display:'inline-block', width:18, height:2, background:'#94a3b8', borderRadius:1 }}/>Based on your spending</span>
-                    <span style={{ display:'flex', alignItems:'center', gap:4 }}><span style={{ display:'inline-block', width:18, height:2, borderRadius:1, opacity:0.5, borderTop:'2px dashed #94a3b8' }}/>Based on your plan</span>
-                  </div>
-                ) : (
-                  <Lg items={goals.map((g,i) => [`${g.emoji} ${g.name}`, GOAL_COLORS[i % GOAL_COLORS.length]])}/>
-                )}
-              </>
+                      {/* Plan lines — dashed Line when actual data exists, Area otherwise */}
+                      {goals.map((g,i) => hasActualData && plan.surplus > 0 ? (
+                        <Line key={`plan_${g.id}`} type="monotone" dataKey={g.id} name={`${g.emoji} ${g.name} (plan)`}
+                          stroke={GOAL_COLORS[i % GOAL_COLORS.length]} strokeWidth={1.5} strokeDasharray="5 3"
+                          dot={false} activeDot={{r:3}}/>
+                      ) : !hasActualData && plan.surplus > 0 ? (
+                        <Area key={g.id} type="monotone" dataKey={g.id} name={`${g.emoji} ${g.name}`}
+                          stroke={GOAL_COLORS[i % GOAL_COLORS.length]} fill={`url(#gp_${g.id})`}
+                          strokeWidth={2} dot={false} activeDot={{r:4}}/>
+                      ) : null)}
+                      {goals.map((g,i) => (
+                        <ReferenceLine key={`ref_${g.id}`} y={g.targetAmount||0}
+                          stroke={GOAL_COLORS[i % GOAL_COLORS.length]} strokeDasharray="4 4" strokeOpacity={0.5}
+                          label={{value:`${g.emoji} ${(g.targetAmount||0).toLocaleString()}`,fill:GOAL_COLORS[i % GOAL_COLORS.length],fontSize:9,position:'insideTopRight'}}/>
+                      ))}
+                      {/* Plan crossing dots */}
+                      {plan.surplus > 0 && Object.entries(goalProjData.crossings).map(([gid, cross]) => {
+                        const i = goals.findIndex(g2 => g2.id === gid);
+                        if (i < 0) return null;
+                        return <ReferenceDot key={`dot_${gid}`} x={cross.month} y={goals[i].targetAmount||0}
+                          r={5} fill={GOAL_COLORS[i % GOAL_COLORS.length]} stroke="#111127" strokeWidth={2}
+                          label={{value:`✓ ${cross.label}${hasActualData?' (plan)':''}`,fill:GOAL_COLORS[i % GOAL_COLORS.length],fontSize:9,position:'top'}}/>;
+                      })}
+                      {/* Actual crossing dots */}
+                      {hasActualData && goalPerActual > 0 && Object.entries(goalProjData.actualCrossings).map(([gid, cross]) => {
+                        const i = goals.findIndex(g2 => g2.id === gid);
+                        if (i < 0) return null;
+                        return <ReferenceDot key={`actdot_${gid}`} x={cross.month} y={goals[i].targetAmount||0}
+                          r={5} fill={GOAL_COLORS[i % GOAL_COLORS.length]} stroke="#34d399" strokeWidth={2}
+                          label={{value:`✓ ${cross.label} (actual)`,fill:'#34d399',fontSize:9,position:'bottom'}}/>;
+                      })}
+                    </ComposedChart>
+                  </Ch>
+                  {hasActualData ? (
+                    <div style={{ display:'flex', justifyContent:'center', gap:16, padding:'5px 0', fontSize:11, color:'#64748b', flexWrap:'wrap' }}>
+                      <span style={{ display:'flex', alignItems:'center', gap:4 }}><span style={{ display:'inline-block', width:18, height:2, background:'#94a3b8', borderRadius:1 }}/>Based on your spending</span>
+                      <span style={{ display:'flex', alignItems:'center', gap:4 }}><span style={{ display:'inline-block', width:18, height:2, borderRadius:1, opacity:0.5, borderTop:'2px dashed #94a3b8' }}/>Based on your plan</span>
+                    </div>
+                  ) : (
+                    <Lg items={goals.map((g,i) => [`${g.emoji} ${g.name}`, GOAL_COLORS[i % GOAL_COLORS.length]])}/>
+                  )}
+                </>
+              )
             )}
           </div>
         )}
@@ -2571,8 +2623,14 @@ function DashboardInner() {
                 <span>{pct}% complete</span>
               </div>
               <div style={{ fontSize:11, color:'#475569' }}>
-                {proj.startsWith('Plan:') ? proj : <>Projected: <span style={{ color:proj==='Complete'?'#34d399':proj.includes('Increase')?'#f87171':'#94a3b8' }}>{proj}</span></>}
-                {g.targetDate && <span style={{ marginLeft:8, color:'#334155' }}>· Target: {goalFmtDate(g.targetDate)}</span>}
+                {userTier === 'free' ? (
+                  <span style={{ fontSize:9, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', color:'#7c3aed', background:'rgba(124,58,237,0.12)', padding:'2px 7px', borderRadius:4 }}>Pro</span>
+                ) : (
+                  <>
+                    {proj.startsWith('Plan:') ? proj : <>Projected: <span style={{ color:proj==='Complete'?'#34d399':proj.includes('Increase')?'#f87171':'#94a3b8' }}>{proj}</span></>}
+                    {g.targetDate && <span style={{ marginLeft:8, color:'#334155' }}>· Target: {goalFmtDate(g.targetDate)}</span>}
+                  </>
+                )}
               </div>
             </div>
           );
@@ -2892,6 +2950,9 @@ function DashboardInner() {
                 </div>
               )}
             </div>
+          {userTier === 'free' && (
+            <ProBadge title="12-Month Heatmap" description="Spot spending patterns across seasons. See which days and months cost you the most over a full year." />
+          )}
           </>);
         })();
         })()}
@@ -2932,6 +2993,9 @@ function DashboardInner() {
             </div>
           )}
 
+          {userTier === 'free' && (
+            <ProBadge title="Search 12 Months" description="Search across your full transaction history. Currently showing your latest upload only." />
+          )}
           <input
             type="text" placeholder="Search transactions…" value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
@@ -3075,157 +3139,270 @@ function DashboardInner() {
         );
       })()}
 
-      {/* ═══ AI CHAT ═══ */}
-      {tab === "aichat" && (<div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)', minHeight: 400 }}>
-        {!aiKey ? (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 32, textAlign: 'center' }}>
-            <div style={{ fontSize: 40 }}>🤖</div>
-            <div style={{ fontSize: 15, color: '#94a3b8', fontWeight: 600 }}>No AI provider connected</div>
-            <div style={{ fontSize: 12, color: '#475569', maxWidth: 280, lineHeight: 1.7 }}>Connect an AI provider in Settings to get personalised financial insights.</div>
-            <button onClick={() => setTab('settings')} style={{ marginTop: 8, padding: '9px 20px', borderRadius: 10, background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)', color: '#818cf8', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Go to Settings</button>
+      {/* ═══ AI CHAT FLOATING PANEL + FAB ═══ */}
+      {/* Backdrop — clicking outside closes the panel */}
+      {chatOpen && (
+        <div
+          onClick={() => setChatOpen(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 199 }}
+        />
+      )}
+      {/* Floating panel */}
+      <div style={{
+        position: 'fixed',
+        bottom: isMobile ? 0 : 80,
+        right: isMobile ? 0 : 20,
+        width: isMobile ? '100vw' : 'min(400px, calc(100vw - 32px))',
+        maxHeight: isMobile ? '95vh' : '70vh',
+        zIndex: 200,
+        display: 'flex',
+        flexDirection: 'column',
+        background: '#13132a',
+        borderRadius: isMobile ? '20px 20px 0 0' : 16,
+        border: '1px solid rgba(255,255,255,0.1)',
+        boxShadow: '0 24px 64px rgba(0,0,0,0.6), 0 4px 16px rgba(0,0,0,0.4)',
+        transformOrigin: isMobile ? 'bottom center' : 'bottom right',
+        transform: chatOpen ? 'scale(1) translateY(0)' : (isMobile ? 'translateY(100%)' : 'scale(0.92) translateY(16px)'),
+        opacity: chatOpen ? 1 : 0,
+        pointerEvents: chatOpen ? 'auto' : 'none',
+        transition: 'transform 0.22s cubic-bezier(0.34,1.2,0.64,1), opacity 0.18s ease',
+      }}
+        onKeyDown={e => { if (e.key === 'Escape') setChatOpen(false); }}
+      >
+        {/* Panel header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px 12px', borderBottom: '1px solid rgba(255,255,255,0.07)', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 16 }}>🤖</span>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#f1f5f9', lineHeight: 1.2 }}>AI Insights</div>
+              {aiKey && (
+                <div style={{ fontSize: 10, color: '#475569', marginTop: 1 }}>
+                  {AI_PROVIDERS[aiProvider]?.label}{aiProvider && aiModel ? ' · ' : ''}{AI_PROVIDERS[aiProvider]?.models.find(m => m.id === aiModel)?.label || aiModel}
+                  {isLiveData && <span style={{ marginLeft: 6, color: '#34d399' }}>● live</span>}
+                </div>
+              )}
+            </div>
           </div>
-        ) : (<>
-          {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexShrink: 0, flexWrap: 'wrap', gap: 6 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <div style={{ fontSize: 12, color: '#475569' }}>
-                {AI_PROVIDERS[aiProvider]?.label} · {AI_PROVIDERS[aiProvider]?.models.find(m => m.id === aiModel)?.label || aiModel}
-                {isLiveData && <span style={{ marginLeft: 8, color: '#34d399' }}>● live data</span>}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {chatMessages.length > 0 && (
+              <button onClick={() => { setChatMessages([]); setChatSuggestions([]); }} style={{ padding: '4px 10px', borderRadius: 7, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', color: '#475569', fontSize: 10, cursor: 'pointer', fontFamily: 'inherit' }}>Clear</button>
+            )}
+            <button onClick={() => setChatOpen(false)} style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1, fontFamily: 'inherit' }}>✕</button>
+          </div>
+        </div>
+        {/* Panel body */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '12px 14px 14px' }}>
+          {!aiKey ? (
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', padding: '4px 2px 8px' }}>
+              {/* Heading */}
+              <div style={{ textAlign: 'center', padding: '12px 8px 16px' }}>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 10px', borderRadius: 20, background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.25)', marginBottom: 12 }}>
+                  <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#818cf8' }}>Pro feature</span>
+                </div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#f1f5f9', lineHeight: 1.3, marginBottom: 7 }}>AI-Powered Financial Insights</div>
+                <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.7 }}>Ask questions about your spending, get personalised advice, and spot patterns you'd miss.</div>
               </div>
-              {/* Quick action pills */}
+              {/* Demo exchange */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16, padding: '0 2px' }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <div style={{ maxWidth: '82%', padding: '8px 12px', borderRadius: '14px 14px 4px 14px', background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.22)', fontSize: 12, color: '#c7d2fe', lineHeight: 1.6 }}>
+                    What did I spend the most on last month?
+                  </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'flex-end', gap: 7 }}>
+                  <div style={{ width: 22, height: 22, borderRadius: '50%', background: 'linear-gradient(135deg,#4f6ef7,#7c3aed)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, flexShrink: 0 }}>🤖</div>
+                  <div style={{ maxWidth: '82%', padding: '8px 12px', borderRadius: '14px 14px 14px 4px', background: 'rgba(255,255,255,0.055)', border: '1px solid rgba(255,255,255,0.08)', fontSize: 12, color: '#e2e8f0', lineHeight: 1.7 }}>
+                    <strong style={{ color: '#f1f5f9' }}>Groceries at $847</strong>, up 12% from the month before. The Harris Farm weekend shops are the main driver — averaging $95 per visit.
+                  </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <div style={{ maxWidth: '82%', padding: '8px 12px', borderRadius: '14px 14px 4px 14px', background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.22)', fontSize: 12, color: '#c7d2fe', lineHeight: 1.6 }}>
+                    How can I hit my house deposit goal faster?
+                  </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'flex-end', gap: 7 }}>
+                  <div style={{ width: 22, height: 22, borderRadius: '50%', background: 'linear-gradient(135deg,#4f6ef7,#7c3aed)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, flexShrink: 0 }}>🤖</div>
+                  <div style={{ maxWidth: '82%', padding: '8px 12px', borderRadius: '14px 14px 14px 4px', background: 'rgba(255,255,255,0.055)', border: '1px solid rgba(255,255,255,0.08)', fontSize: 12, color: '#e2e8f0', lineHeight: 1.7 }}>
+                    At your current savings rate of <strong style={{ color: '#f1f5f9' }}>$1,200/month</strong>, you'll reach $60K in 28 months. Cutting dining out by 30% would shave <strong style={{ color: '#34d399' }}>4 months off</strong>.
+                  </div>
+                </div>
+              </div>
+              {/* Provider note + CTA */}
+              <div style={{ textAlign: 'center', padding: '0 8px 4px', marginTop: 'auto' }}>
+                <div style={{ fontSize: 11, color: '#475569', marginBottom: 14, lineHeight: 1.6 }}>Works with <span style={{ color: '#94a3b8' }}>Claude</span>, <span style={{ color: '#94a3b8' }}>ChatGPT</span>, or <span style={{ color: '#94a3b8' }}>Gemini</span> — bring your own API key.</div>
+                <button
+                  onClick={() => { setChatOpen(false); setTab('settings'); }}
+                  style={{ width: '100%', padding: '11px 20px', borderRadius: 12, background: 'linear-gradient(135deg, rgba(79,110,247,0.25) 0%, rgba(124,58,237,0.25) 100%)', border: '1px solid rgba(99,102,241,0.4)', color: '#a5b4fc', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.01em', transition: 'background 0.15s' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'linear-gradient(135deg, rgba(79,110,247,0.38) 0%, rgba(124,58,237,0.38) 100%)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'linear-gradient(135deg, rgba(79,110,247,0.25) 0%, rgba(124,58,237,0.25) 100%)'}
+                >Set up AI in Settings →</button>
+              </div>
+            </div>
+          ) : (<>
+            {/* Quick action pills */}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10, flexShrink: 0 }}>
               {[
                 { label: '📊 Summarise my month', prompt: 'Give me a concise monthly summary of my finances. Include: total income, total spending, savings rate, top 3 spending categories, and one thing I should consider changing.' },
                 { label: '🏠 Cost of living check', prompt: 'Compare my spending to typical Australian benchmarks. Am I above or below average on groceries, dining, transport, and utilities? Use ABS data as a rough guide.' },
               ].map(({ label, prompt }) => (
                 <button key={label} onClick={() => sendChatMessage(prompt)} disabled={chatStreaming}
-                  style={{ padding: '3px 10px', borderRadius: 20, background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', color: '#818cf8', fontSize: 10, cursor: chatStreaming ? 'default' : 'pointer', opacity: chatStreaming ? 0.5 : 1, fontWeight: 500, whiteSpace: 'nowrap' }}
+                  style={{ padding: '3px 10px', borderRadius: 20, background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', color: '#818cf8', fontSize: 10, cursor: chatStreaming ? 'default' : 'pointer', opacity: chatStreaming ? 0.5 : 1, fontWeight: 500, whiteSpace: 'nowrap', fontFamily: 'inherit' }}
                   onMouseEnter={e => { if (!chatStreaming) e.currentTarget.style.background = 'rgba(99,102,241,0.16)'; }}
                   onMouseLeave={e => { e.currentTarget.style.background = 'rgba(99,102,241,0.08)'; }}
                 >{label}</button>
               ))}
             </div>
-            {chatMessages.length > 0 && (
-              <button onClick={() => { setChatMessages([]); setChatSuggestions([]); }} style={{ padding: '4px 10px', borderRadius: 7, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', color: '#475569', fontSize: 10, cursor: 'pointer' }}>Clear conversation</button>
-            )}
-          </div>
-          {/* Message area */}
-          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10, paddingRight: 2 }}>
-            {chatMessages.length === 0 && (
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
-                <div style={{ fontSize: 32, opacity: 0.4 }}>💬</div>
-                <div style={{ fontSize: 12, color: '#64748b', textAlign: 'center', maxWidth: 260, lineHeight: 1.7, opacity: 0.7 }}>Ask anything about your finances — spending patterns, saving tips, mortgage analysis, budget advice.</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 320 }}>
-                  {[
-                    'What did I spend the most on last month?',
-                    'How can I improve my savings rate?',
-                    'Are there any spending patterns I should worry about?',
-                  ].map(prompt => (
-                    <button key={prompt} onClick={() => sendChatMessage(prompt)} style={{ padding: '9px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8', fontSize: 12, cursor: 'pointer', textAlign: 'left', lineHeight: 1.4, transition: 'background 0.15s' }}
-                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
-                    >{prompt}</button>
-                  ))}
+            {/* Message area */}
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10, paddingRight: 2 }}>
+              {chatMessages.length === 0 && (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
+                  <div style={{ fontSize: 28, opacity: 0.4 }}>💬</div>
+                  <div style={{ fontSize: 12, color: '#64748b', textAlign: 'center', maxWidth: 240, lineHeight: 1.7, opacity: 0.7 }}>Ask anything about your finances — spending patterns, saving tips, mortgage analysis, budget advice.</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7, width: '100%' }}>
+                    {[
+                      'What did I spend the most on last month?',
+                      'How can I improve my savings rate?',
+                      'Are there any spending patterns I should worry about?',
+                    ].map(prompt => (
+                      <button key={prompt} onClick={() => sendChatMessage(prompt)} style={{ padding: '9px 13px', borderRadius: 10, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8', fontSize: 12, cursor: 'pointer', textAlign: 'left', lineHeight: 1.4, transition: 'background 0.15s', fontFamily: 'inherit' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
+                      >{prompt}</button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
-            {chatMessages.map((msg, i) => {
-              const isLastAssistant = msg.role === 'assistant' && i === chatMessages.length - 1 && !chatStreaming;
-              return (
-                <div key={i}>
-                  <div style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
-                    <div style={{
-                      maxWidth: '85%', padding: '9px 13px', borderRadius: msg.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
-                      background: msg.role === 'user' ? 'rgba(99,102,241,0.18)' : msg.isError ? 'rgba(248,113,113,0.07)' : 'rgba(255,255,255,0.055)',
-                      border: msg.role === 'user' ? '1px solid rgba(99,102,241,0.25)' : msg.isError ? '1px solid rgba(248,113,113,0.18)' : '1px solid rgba(255,255,255,0.07)',
-                      fontSize: 12, color: msg.isError ? '#fca5a5' : '#e2e8f0', lineHeight: 1.75,
-                    }}>
-                      {msg.role === 'assistant' ? (<>
-                        {(() => {
-                          // Simple markdown: bold, bullet lists, numbered lists
-                          const parts = msg.text.split('\n');
-                          return parts.map((line, li) => {
-                            const isBullet = /^[-*•]\s/.test(line);
-                            const isNum = /^\d+\.\s/.test(line);
-                            // Apply markdown formatting
-                            let formatted = line
-                              .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-                              .replace(/`(.+?)`/g, '<code style="background:rgba(255,255,255,0.08);padding:1px 4px;border-radius:3px;font-size:11px">$1</code>');
-                            // Apply category links — replace matched terms with inline buttons
-                            CHAT_CATEGORY_LINKS.forEach(({ pattern, tab: targetTab }) => {
-                              formatted = formatted.replace(pattern, (match) =>
-                                `<button onclick="window.__chatNav('${targetTab}')" style="background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.25);color:#a5b4fc;border-radius:4px;padding:0 5px;font-size:11px;cursor:pointer;font-family:inherit;line-height:1.6">${match}</button>`
+              )}
+              {chatMessages.map((msg, i) => {
+                const isLastAssistant = msg.role === 'assistant' && i === chatMessages.length - 1 && !chatStreaming;
+                return (
+                  <div key={i}>
+                    <div style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                      <div style={{
+                        maxWidth: '85%', padding: '9px 13px', borderRadius: msg.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
+                        background: msg.role === 'user' ? 'rgba(99,102,241,0.18)' : msg.isError ? 'rgba(248,113,113,0.07)' : 'rgba(255,255,255,0.055)',
+                        border: msg.role === 'user' ? '1px solid rgba(99,102,241,0.25)' : msg.isError ? '1px solid rgba(248,113,113,0.18)' : '1px solid rgba(255,255,255,0.07)',
+                        fontSize: 12, color: msg.isError ? '#fca5a5' : '#e2e8f0', lineHeight: 1.75,
+                      }}>
+                        {msg.role === 'assistant' ? (<>
+                          {(() => {
+                            const parts = msg.text.split('\n');
+                            return parts.map((line, li) => {
+                              const isBullet = /^[-*•]\s/.test(line);
+                              const isNum = /^\d+\.\s/.test(line);
+                              let formatted = line
+                                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                                .replace(/`(.+?)`/g, '<code style="background:rgba(255,255,255,0.08);padding:1px 4px;border-radius:3px;font-size:11px">$1</code>');
+                              CHAT_CATEGORY_LINKS.forEach(({ pattern, tab: targetTab }) => {
+                                formatted = formatted.replace(pattern, (match) =>
+                                  `<button onclick="window.__chatNav('${targetTab}')" style="background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.25);color:#a5b4fc;border-radius:4px;padding:0 5px;font-size:11px;cursor:pointer;font-family:inherit;line-height:1.6">${match}</button>`
+                                );
+                              });
+                              return (
+                                <div key={li} style={{ marginLeft: (isBullet || isNum) ? 8 : 0, paddingLeft: (isBullet || isNum) ? 8 : 0, borderLeft: (isBullet || isNum) ? '2px solid rgba(255,255,255,0.1)' : 'none', marginBottom: line === '' ? 6 : 2 }}
+                                  dangerouslySetInnerHTML={{ __html: formatted || '&nbsp;' }}
+                                />
                               );
                             });
-                            return (
-                              <div key={li} style={{ marginLeft: (isBullet || isNum) ? 8 : 0, paddingLeft: (isBullet || isNum) ? 8 : 0, borderLeft: (isBullet || isNum) ? '2px solid rgba(255,255,255,0.1)' : 'none', marginBottom: line === '' ? 6 : 2 }}
-                                dangerouslySetInnerHTML={{ __html: formatted || '&nbsp;' }}
-                              />
-                            );
-                          });
-                        })()}
-                        {msg.action && <button onClick={() => setTab(msg.action.tab)} style={{ marginTop: 8, padding: '5px 10px', borderRadius: 7, background: 'rgba(248,113,113,0.15)', border: '1px solid rgba(248,113,113,0.25)', color: '#fca5a5', fontSize: 11, cursor: 'pointer', display: 'block' }}>{msg.action.label}</button>}
-                      </>) : msg.text}
+                          })()}
+                          {msg.action && <button onClick={() => setTab(msg.action.tab)} style={{ marginTop: 8, padding: '5px 10px', borderRadius: 7, background: 'rgba(248,113,113,0.15)', border: '1px solid rgba(248,113,113,0.25)', color: '#fca5a5', fontSize: 11, cursor: 'pointer', display: 'block', fontFamily: 'inherit' }}>{msg.action.label}</button>}
+                        </>) : msg.text}
+                      </div>
                     </div>
+                    {isLastAssistant && chatSuggestions.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6, paddingLeft: 4 }}>
+                        {chatSuggestions.map(s => (
+                          <button key={s} onClick={() => { setChatSuggestions([]); sendChatMessage(s); }}
+                            style={{ padding: '4px 10px', borderRadius: 20, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', fontSize: 11, cursor: 'pointer', transition: 'background 0.15s', fontFamily: 'inherit' }}
+                            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.09)'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
+                          >{s}</button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  {/* Follow-up suggestions after last assistant message */}
-                  {isLastAssistant && chatSuggestions.length > 0 && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6, paddingLeft: 4 }}>
-                      {chatSuggestions.map(s => (
-                        <button key={s} onClick={() => { setChatSuggestions([]); sendChatMessage(s); }}
-                          style={{ padding: '4px 10px', borderRadius: 20, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', fontSize: 11, cursor: 'pointer', transition: 'background 0.15s' }}
-                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.09)'}
-                          onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
-                        >{s}</button>
-                      ))}
-                    </div>
-                  )}
+                );
+              })}
+              {chatStreaming && chatMessages[chatMessages.length - 1]?.role !== 'assistant' && (
+                <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                  <div style={{ padding: '10px 14px', borderRadius: '14px 14px 14px 4px', background: 'rgba(255,255,255,0.055)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                    <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+                      {[0,1,2].map(j => <span key={j} style={{ width: 5, height: 5, borderRadius: '50%', background: '#64748b', animation: 'chatDot 1.2s infinite', animationDelay: `${j * 0.2}s`, display: 'inline-block' }} />)}
+                    </span>
+                  </div>
                 </div>
-              );
-            })}
-            {chatStreaming && chatMessages[chatMessages.length - 1]?.role !== 'assistant' && (
-              <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-                <div style={{ padding: '10px 14px', borderRadius: '14px 14px 14px 4px', background: 'rgba(255,255,255,0.055)', border: '1px solid rgba(255,255,255,0.07)' }}>
-                  <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
-                    {[0,1,2].map(j => <span key={j} style={{ width: 5, height: 5, borderRadius: '50%', background: '#64748b', animation: 'chatDot 1.2s infinite', animationDelay: `${j * 0.2}s`, display: 'inline-block' }} />)}
-                  </span>
-                </div>
-              </div>
-            )}
-            <div ref={chatBottomRef} />
-          </div>
-          {/* Input area */}
-          <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'flex-end', flexShrink: 0 }}>
-            <textarea
-              ref={chatInputRef}
-              value={chatInput}
-              onChange={e => setChatInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); } }}
-              disabled={chatStreaming}
-              placeholder="Ask about your finances…"
-              rows={1}
-              style={{
-                flex: 1, resize: 'none', maxHeight: 80, overflowY: 'auto',
-                padding: '10px 13px', borderRadius: 12,
-                background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
-                color: '#e2e8f0', fontSize: 12, lineHeight: 1.5,
-                outline: 'none', fontFamily: 'inherit',
-                opacity: chatStreaming ? 0.5 : 1,
-              }}
-            />
-            <button
-              onClick={sendChatMessage}
-              disabled={chatStreaming || !chatInput.trim()}
-              style={{
-                padding: '10px 14px', borderRadius: 12, flexShrink: 0,
-                background: chatStreaming || !chatInput.trim() ? 'rgba(99,102,241,0.08)' : 'rgba(99,102,241,0.25)',
-                border: '1px solid rgba(99,102,241,0.3)', color: chatStreaming || !chatInput.trim() ? '#475569' : '#818cf8',
-                fontSize: 16, cursor: chatStreaming || !chatInput.trim() ? 'default' : 'pointer', lineHeight: 1,
-              }}
-            >↑</button>
-          </div>
-          <style>{`@keyframes chatDot { 0%,80%,100%{opacity:0.2} 40%{opacity:1} }`}</style>
-        </>)}
-      </div>)}
+              )}
+              <div ref={chatBottomRef} />
+            </div>
+            {/* Input area */}
+            <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'flex-end', flexShrink: 0 }}>
+              <textarea
+                ref={chatInputRef}
+                value={chatInput}
+                onChange={e => setChatInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); } }}
+                disabled={chatStreaming}
+                placeholder="Ask about your finances…"
+                rows={1}
+                style={{
+                  flex: 1, resize: 'none', maxHeight: 80, overflowY: 'auto',
+                  padding: '10px 13px', borderRadius: 12,
+                  background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+                  color: '#e2e8f0', fontSize: 12, lineHeight: 1.5,
+                  outline: 'none', fontFamily: 'inherit',
+                  opacity: chatStreaming ? 0.5 : 1,
+                }}
+              />
+              <button
+                onClick={sendChatMessage}
+                disabled={chatStreaming || !chatInput.trim()}
+                style={{
+                  padding: '10px 14px', borderRadius: 12, flexShrink: 0,
+                  background: chatStreaming || !chatInput.trim() ? 'rgba(99,102,241,0.08)' : 'rgba(99,102,241,0.25)',
+                  border: '1px solid rgba(99,102,241,0.3)', color: chatStreaming || !chatInput.trim() ? '#475569' : '#818cf8',
+                  fontSize: 16, cursor: chatStreaming || !chatInput.trim() ? 'default' : 'pointer', lineHeight: 1, fontFamily: 'inherit',
+                }}
+              >↑</button>
+            </div>
+          </>)}
+        </div>
+      </div>
+      {/* FAB */}
+      <button
+        onClick={() => { setChatOpen(o => !o); setChatHasUnread(false); }}
+        title="AI Insights"
+        style={{
+          position: 'fixed',
+          bottom: 20,
+          right: 20,
+          width: isMobile ? 44 : 52,
+          height: isMobile ? 44 : 52,
+          borderRadius: '50%',
+          background: 'linear-gradient(135deg, #4f6ef7 0%, #7c3aed 100%)',
+          border: 'none',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: isMobile ? 20 : 22,
+          boxShadow: '0 4px 20px rgba(79,110,247,0.45), 0 2px 8px rgba(0,0,0,0.4)',
+          zIndex: 201,
+          animation: fabPulsed ? 'none' : 'fabPulse 1.8s ease-in-out 2',
+          transition: 'transform 0.15s, box-shadow 0.15s',
+          outline: 'none',
+        }}
+        onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.08)'; e.currentTarget.style.boxShadow = '0 6px 28px rgba(79,110,247,0.6), 0 2px 8px rgba(0,0,0,0.4)'; }}
+        onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 4px 20px rgba(79,110,247,0.45), 0 2px 8px rgba(0,0,0,0.4)'; }}
+      >
+        🤖
+        {/* No-API-key indicator */}
+        {!aiKey && (
+          <span style={{ position: 'absolute', top: 2, right: 2, width: 10, height: 10, borderRadius: '50%', background: '#f59e0b', border: '2px solid #0b0b17' }} />
+        )}
+        {/* Unread indicator */}
+        {chatHasUnread && aiKey && (
+          <span style={{ position: 'absolute', top: 2, right: 2, width: 10, height: 10, borderRadius: '50%', background: '#34d399', border: '2px solid #0b0b17' }} />
+        )}
+      </button>
 
       {/* ═══ SETTINGS ═══ */}
       {tab === "settings" && (<div>
@@ -3335,6 +3512,17 @@ function DashboardInner() {
           >
             {confirmClear ? 'Tap again to confirm — this clears all data' : 'Clear all data'}
           </button>
+        )}
+
+        {/* ── Encrypted Sync teaser ── */}
+        {userTier === 'free' && (
+          <div style={{ marginTop: 24 }}>
+            <ProBadge
+              title="Encrypted Cloud Sync"
+              description="Your data is currently stored in this browser only. Clear your cache and it's gone. Pro gives you AES-256-GCM encrypted sync across all your devices — we can't read your data even if we wanted to."
+              cta={{ label: 'Learn about our encryption', onClick: () => window.open('https://getcomma.com.au/help', '_blank') }}
+            />
+          </div>
         )}
 
         {/* ── Custom Categories / User Rules ── */}
