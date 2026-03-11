@@ -18,7 +18,7 @@ function parseCSVLine(line) {
   return result;
 }
 
-function parseCSV(text) {
+export function parseCSV(text) {
   const lines = text.replace(/^\uFEFF/, '').trim().split(/\r?\n/);
   if (lines.length < 2) return [];
   const headers = parseCSVLine(lines[0]).map(h => h.trim().replace(/^\uFEFF/, ''));
@@ -45,12 +45,15 @@ function monthKeyYY(date) { return `${MONTH_NAMES[date.getMonth()]}'${String(dat
 
 function parseDate(str) {
   if (!str) return null;
-  // ISO: YYYY-MM-DD
-  let m = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  // ISO: YYYY-MM-DD or YYYY/MM/DD
+  let m = str.match(/^(\d{4})[-\/](\d{2})[-\/](\d{2})/);
   if (m) return new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
-  // Australian: DD/MM/YYYY
-  m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  // DD/MM/YYYY, DD-MM-YYYY, D/M/YYYY (Australian full year)
+  m = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
   if (m) return new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1]));
+  // DD/MM/YY, DD-MM-YY, D/M/YY (short year — assume 2000s)
+  m = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})$/);
+  if (m) return new Date(2000 + parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1]));
   return null;
 }
 
@@ -80,6 +83,245 @@ function getSortedMonths(dates) {
     cur.setMonth(cur.getMonth() + 1);
   }
   return months;
+}
+
+// ─── BANK FORMAT DETECTION ───────────────────────────────────────────────────
+
+export function detectBankFormat(rows) {
+  const unknown = (confidence = 'manual') => ({
+    bank: 'unknown', bankLabel: 'Unknown Bank', confidence,
+    columns: { date: null, description: null, amount: null, debit: null, credit: null, balance: null, category: null },
+    amountStyle: 'single',
+  });
+
+  if (!rows || rows.length === 0) return unknown();
+
+  const sample = rows[0];
+  const headers = Object.keys(sample);
+  const headersLower = headers.map(h => h.toLowerCase().trim());
+  const headerSet = new Set(headersLower);
+
+  // Returns the original-case header name for the first matching lowercase keyword
+  function col(...names) {
+    for (const name of names) {
+      const idx = headersLower.indexOf(name.toLowerCase());
+      if (idx !== -1) return headers[idx];
+    }
+    return null;
+  }
+
+  // All of names must be present (superset check)
+  function has(...names) {
+    return names.every(n => headerSet.has(n.toLowerCase()));
+  }
+
+  // Headers must match exactly (same count + same names)
+  function exact(...names) {
+    return headersLower.length === names.length && names.every(n => headerSet.has(n.toLowerCase()));
+  }
+
+  // ── Tier 1: Known bank by exact header match ────────────────────────────────
+
+  // CommSec — check early; 'security code' is very distinctive
+  if (has('security code') || has('mkt value $') || has('mkt value') || has('market value')) {
+    return {
+      bank: 'commsec', bankLabel: 'CommSec', confidence: 'exact',
+      columns: { date: null, description: null, amount: null, debit: null, credit: null, balance: null, category: null },
+      amountStyle: 'single',
+    };
+  }
+
+  // Up Bank — 'subtotal' column is unique to Up Bank exports
+  if (has('transaction type', 'subtotal')) {
+    return {
+      bank: 'upbank', bankLabel: 'Up Bank', confidence: 'exact',
+      columns: {
+        date:        col('date', 'transaction date'),
+        description: col('description', 'merchant', 'name'),
+        amount:      col('value', 'amount', 'debit/credit'),
+        debit: null, credit: null,
+        balance:     null,
+        category:    col('category', 'up category'),
+      },
+      amountStyle: 'single',
+    };
+  }
+
+  // PayPal — 'gross' column is distinctive; guard with 'name' to avoid false positives
+  if (has('gross') || (has('status') && has('name') && has('date'))) {
+    return {
+      bank: 'paypal', bankLabel: 'PayPal', confidence: 'exact',
+      columns: {
+        date:        col('date'),
+        description: col('name', 'description'),
+        amount:      col('gross', 'amount'),
+        debit: null, credit: null,
+        balance: null, category: null,
+      },
+      amountStyle: 'single',
+    };
+  }
+
+  // BankWest — 'bsb' column is unique to BankWest exports
+  if (has('bsb', 'account number', 'transaction date', 'description', 'debit', 'credit', 'balance', 'transaction type')) {
+    return {
+      bank: 'bankwest', bankLabel: 'BankWest', confidence: 'exact',
+      columns: {
+        date:        col('transaction date'),
+        description: col('description'),
+        amount: null,
+        debit:        col('debit'),
+        credit:       col('credit'),
+        balance:      col('balance'),
+        category: null,
+      },
+      amountStyle: 'split',
+    };
+  }
+
+  // Macquarie — 'account name' + 'debit amount' / 'credit amount' combo is distinctive
+  if (has('account name', 'transaction date', 'transaction description', 'debit amount', 'credit amount')) {
+    return {
+      bank: 'macquarie', bankLabel: 'Macquarie Bank', confidence: 'exact',
+      columns: {
+        date:        col('transaction date'),
+        description: col('transaction description'),
+        amount: null,
+        debit:        col('debit amount'),
+        credit:       col('credit amount'),
+        balance:      col('balance'),
+        category: null,
+      },
+      amountStyle: 'split',
+    };
+  }
+
+  // NAB — 'transaction id' + 'transaction details' combo is distinctive
+  if (has('date', 'amount', 'transaction id', 'transaction type', 'transaction details', 'balance')) {
+    return {
+      bank: 'nab', bankLabel: 'National Australia Bank', confidence: 'exact',
+      columns: {
+        date:        col('date'),
+        description: col('transaction details'),
+        amount:      col('amount'),
+        debit: null, credit: null,
+        balance:     col('balance'),
+        category: null,
+      },
+      amountStyle: 'single',
+    };
+  }
+
+  // ANZ — exactly 3 columns: Date, Amount, Description (no Balance)
+  if (exact('date', 'amount', 'description')) {
+    return {
+      bank: 'anz', bankLabel: 'ANZ', confidence: 'exact',
+      columns: {
+        date:        col('date'),
+        description: col('description'),
+        amount:      col('amount'),
+        debit: null, credit: null,
+        balance: null, category: null,
+      },
+      amountStyle: 'single',
+    };
+  }
+
+  // St George / BOQ — exactly 5 columns: Date, Description, Debit, Credit, Balance
+  // Both banks share this identical header set; default to St George
+  if (exact('date', 'description', 'debit', 'credit', 'balance')) {
+    return {
+      bank: 'stgeorge', bankLabel: 'St.George / BOQ', confidence: 'exact',
+      columns: {
+        date:        col('date'),
+        description: col('description'),
+        amount: null,
+        debit:        col('debit'),
+        credit:       col('credit'),
+        balance:      col('balance'),
+        category: null,
+      },
+      amountStyle: 'split',
+    };
+  }
+
+  // CBA / Westpac — exactly 4 columns: Date, Amount, Description, Balance
+  // Differentiate by scanning description values for Westpac-style prefixes
+  if (exact('date', 'amount', 'description', 'balance')) {
+    const descColName = col('description');
+    const westpacPatterns = [
+      /^VISA DEBIT/i, /^EFTPOS DEBIT/i, /^OSKO PAYMENT/i, /^OSKO RECEIPT/i,
+      /^ATM WITHDRAWAL/i, /^BPAY INTERNET/i, /^DIRECT DEBIT/i, /^INTERNET TRANSFER/i,
+    ];
+    const sampleDescs = rows.slice(0, 20).map(r => r[descColName] || '');
+    const looksLikeWestpac = sampleDescs.some(d => westpacPatterns.some(p => p.test(d)));
+
+    if (looksLikeWestpac) {
+      return {
+        bank: 'westpac', bankLabel: 'Westpac', confidence: 'inferred',
+        columns: {
+          date:        col('date'),
+          description: col('description'),
+          amount:      col('amount'),
+          debit: null, credit: null,
+          balance:     col('balance'),
+          category: null,
+        },
+        amountStyle: 'single',
+      };
+    }
+
+    return {
+      bank: 'cba', bankLabel: 'Commonwealth Bank', confidence: 'exact',
+      columns: {
+        date:        col('date'),
+        description: col('description'),
+        amount:      col('amount'),
+        debit: null, credit: null,
+        balance:     col('balance'),
+        category: null,
+      },
+      amountStyle: 'single',
+    };
+  }
+
+  // ── Tier 2: Shape detection (unknown bank, recognisable structure) ──────────
+
+  // keyword → header search (partial match, order = priority)
+  function findByKeyword(...keywords) {
+    for (const kw of keywords) {
+      const idx = headersLower.findIndex(h => h.includes(kw.toLowerCase()));
+      if (idx !== -1) return headers[idx];
+    }
+    return null;
+  }
+
+  const t2Date    = findByKeyword('date');
+  const t2Desc    = findByKeyword('description', 'narrative', 'details', 'memo', 'reference', 'particulars');
+  const t2Amount  = findByKeyword('amount', 'value');
+  const t2Debit   = findByKeyword('debit', 'withdrawal');
+  const t2Credit  = findByKeyword('credit', 'deposit');
+  const t2Balance = findByKeyword('balance');
+
+  if (t2Date || t2Desc || t2Amount || t2Debit || t2Credit) {
+    const isSplit = !!(t2Debit && t2Credit);
+    return {
+      bank: 'unknown', bankLabel: 'Unknown Bank', confidence: 'inferred',
+      columns: {
+        date:        t2Date,
+        description: t2Desc,
+        amount:      isSplit ? null : t2Amount,
+        debit:       isSplit ? t2Debit  : null,
+        credit:      isSplit ? t2Credit : null,
+        balance:     t2Balance,
+        category: null,
+      },
+      amountStyle: isSplit ? 'split' : 'single',
+    };
+  }
+
+  // ── Tier 3: Manual mapping needed ──────────────────────────────────────────
+  return unknown('manual');
 }
 
 // ─── UP BANK ─────────────────────────────────────────────────────────────────
@@ -277,42 +519,14 @@ const HEALTH_COLORS = {
 const DOW_ORDERED = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const DOW_NAMES   = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-export function processUpBank(rows) {
-  if (!rows || rows.length === 0) return null;
+// ─── SHARED AGGREGATION ───────────────────────────────────────────────────────
+// Accepts a normalised txs array (fields: date, desc, absAmt, isIncome,
+// merchant, cat, upCat) and returns the standard dashboard output shape.
+// Used by both processUpBank() and processUniversalBank().
+export function aggregateTxs(txs) {
+  if (!txs || txs.length === 0) return null;
 
-  const sample = rows[0];
-  const dateCol = findCol(sample, ['date', 'transaction date']);
-  const descCol = findCol(sample, ['description', 'merchant', 'name']);
-  const amtCol  = findCol(sample, ['value', 'amount', 'debit/credit']);
-  const catCol  = findCol(sample, ['category', 'up category']);
-
-  if (!dateCol || !descCol || !amtCol) return null;
-
-  // Parse and classify each row
-  const txs = rows.map(r => {
-    const date = parseDate(r[dateCol] || '');
-    if (!date) return null;
-    const amount = parseAmount(r[amtCol]);
-    const desc = r[descCol] || '';
-    const upCat = catCol ? (r[catCol] || '') : '';
-
-    const isIncome = amount > 0;
-    const absAmt = Math.abs(amount);
-
-    let merchant = null;
-    for (const [cat, patterns] of Object.entries(MERCHANT_MAP)) {
-      if (patterns.some(p => p.test(desc))) { merchant = cat; break; }
-    }
-
-    const mappedCat = UPBANK_CATEGORY_MAP[upCat];
-    const cat = mappedCat || merchant || (isIncome ? 'income' : 'other');
-
-    return { date, desc, absAmt, isIncome, merchant, cat, upCat };
-  }).filter(Boolean);
-
-  if (txs.length === 0) return null;
-
-  const months = getSortedMonths(txs.map(t => t.date));
+  const months    = getSortedMonths(txs.map(t => t.date));
   const monthKeys = months.map(m => m.key);
 
   const md = {};
@@ -348,7 +562,8 @@ export function processUpBank(rows) {
     if (tx.cat === 'takeaway')   md[mk].takeaway   += tx.absAmt;
     if (tx.cat === 'grocery')    md[mk].grocery    += tx.absAmt;
 
-    const isHealth = tx.cat === 'health' || /Medical|Fitness|Doctor/i.test(tx.upCat);
+    // upCat is Up Bank-specific; falls back gracefully to '' for other banks
+    const isHealth = tx.cat === 'health' || /Medical|Fitness|Doctor/i.test(tx.upCat || '');
     if (isHealth) {
       let sub = 'Other';
       for (const [name, pats] of Object.entries(HEALTH_SUBCATS)) {
@@ -378,8 +593,8 @@ export function processUpBank(rows) {
   const dow = DOW_ORDERED.map(d => ({ d, avg: dowData[d].cnt > 0 ? round(dowData[d].sum / dowData[d].cnt) : 0 }));
 
   const allDates = txs.map(t => t.date);
-  const minDate = new Date(Math.min(...allDates.map(d => d.getTime())));
-  const maxDate = new Date(Math.max(...allDates.map(d => d.getTime())));
+  const minDate  = new Date(Math.min(...allDates.map(d => d.getTime())));
+  const maxDate  = new Date(Math.max(...allDates.map(d => d.getTime())));
   const dateRange = {
     start: `${MONTH_NAMES[minDate.getMonth()]} ${minDate.getFullYear()}`,
     end:   `${MONTH_NAMES[maxDate.getMonth()]} ${maxDate.getFullYear()}`,
@@ -390,7 +605,7 @@ export function processUpBank(rows) {
   const dailyTotals = {};
   for (const tx of txs) {
     if (!tx.isIncome) {
-      const d = tx.date;
+      const d   = tx.date;
       const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
       dailyTotals[key] = (dailyTotals[key] || 0) + tx.absAmt;
     }
@@ -402,15 +617,183 @@ export function processUpBank(rows) {
     .map(tx => {
       const d = tx.date;
       return {
-        date: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`,
-        desc: tx.desc,
+        date:   `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`,
+        desc:   tx.desc,
         amount: tx.absAmt,
-        cat: tx.cat,
+        cat:    tx.cat,
+        source: tx.userRuled ? 'custom' : (tx.cat !== 'other' ? 'auto' : ''),
       };
     })
     .sort((a, b) => b.date.localeCompare(a.date));
 
-  return { pnl, amz, food, hm, hcats, dow, cd, bva, dateRange, dailyTotals, transactions, rowCount: txs.length };
+  return { pnl, amz, food, hm, hcats, dow, cd, bva, dateRange, dailyTotals, transactions, rowCount: txs.length, rawTxs: txs };
+}
+
+// ─── USER RULES ───────────────────────────────────────────────────────────────
+
+/**
+ * Strips bank transaction noise from a raw description to produce a clean,
+ * reusable merchant pattern suitable for user categorisation rules.
+ *
+ * Examples:
+ *   "EFTPOS MARTIN AND CO PTY LT MELBOURNE AUS Card xx7113" → "MARTIN AND CO PTY LT"
+ *   "VISA PURCHASE COLES 2184 BRUNSWICK VIC"               → "COLES 2184 BRUNSWICK"
+ *   "DIRECT DEBIT 142619 TPG Internet DH9M1IFK4EH"         → "TPG Internet"
+ *   "BPAY YARRA VALLEY WATER"                              → "YARRA VALLEY WATER"
+ */
+export function extractMerchantPattern(desc) {
+  let s = desc.trim();
+
+  // 1. Strip common Australian bank transaction prefixes
+  s = s.replace(
+    /^(EFTPOS|VISA\s+(?:PURCHASE|DEBIT|CREDIT|PAYWAVE)|MASTERCARD\s+(?:PURCHASE|DEBIT)|DIRECT\s+DEBIT|DIRECT\s+CREDIT|PENDING\s*-\s*|TRANSFER\s+(?:TO|FROM)\s+|BPAY|OSKO(?:\s+PAYMENT)?|PAY\s+ANYONE|INTERNET\s+TRANSFER)\s*/i,
+    ''
+  );
+
+  // 2. Strip leading asterisks
+  s = s.replace(/^\*+\s*/, '').trim();
+
+  // 3. Strip leading standalone numeric reference codes (e.g. "142619 " before merchant)
+  s = s.replace(/^\d{4,}\s+/, '').trim();
+
+  // 4. Strip "Value Date: DD/MM/YYYY" suffix and everything after
+  s = s.replace(/\s+Value\s+Date:\s*\d{1,2}\/\d{1,2}\/\d{2,4}.*/i, '').trim();
+
+  // 5. Strip card reference numbers: "Card xx1234" or bare "xx1234" and everything after
+  s = s.replace(/\s+(?:Card\s+)?xx\d{3,}\b.*/i, '').trim();
+
+  // 6. Strip trailing alphanumeric reference codes that contain digits
+  //    (e.g. "DH9M1IFK4EH") — distinguishes from plain words by requiring a digit
+  s = s.replace(/\s+(?=[A-Z0-9]*\d)[A-Z0-9]{6,}\s*$/i, '').trim();
+
+  // 7. Strip trailing major Australian city names
+  s = s.replace(/\s+(?:MELBOURNE|SYDNEY|BRISBANE|PERTH|ADELAIDE)\b.*/i, '').trim();
+
+  // 8. Strip trailing state abbreviations and country suffixes
+  s = s.replace(/\s+(?:VIC|NSW|QLD|WA|SA|TAS|NT|ACT|AUS|AU|AUSTRALIA)\s*$/i, '').trim();
+
+  // 9. Strip trailing bare digit sequences (card/ref numbers)
+  s = s.replace(/\s+\d[\d\s]*$/, '').trim();
+
+  // 10. Strip trailing date patterns (DD/MM or DD/MM/YYYY)
+  s = s.replace(/\s+\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?\s*$/, '').trim();
+
+  // 11. Normalise internal whitespace
+  s = s.replace(/\s+/g, ' ').trim();
+
+  return s;
+}
+
+// Re-categorises 'other' transactions that match a user-defined pattern.
+// userRules: { "MERCHANT NAME": "category", ... }
+// Matching is case-insensitive substring. UPBANK_CATEGORY_MAP-categorised
+// transactions are left untouched (highest priority).
+export function applyUserRules(rawTxs, userRules) {
+  if (!rawTxs || !userRules || Object.keys(userRules).length === 0) return rawTxs;
+  return rawTxs.map(tx => {
+    // Up Bank categories (from the CSV category column) take highest priority
+    if (tx.upCat) return tx;
+    const descLower = tx.desc.toLowerCase();
+    for (const [pattern, category] of Object.entries(userRules)) {
+      if (descLower.includes(pattern.toLowerCase())) {
+        return { ...tx, cat: category, userRuled: true };
+      }
+    }
+    return tx;
+  });
+}
+
+
+export function processUpBank(rows) {
+  if (!rows || rows.length === 0) return null;
+
+  const sample  = rows[0];
+  const dateCol = findCol(sample, ['date', 'transaction date']);
+  const descCol = findCol(sample, ['description', 'merchant', 'name']);
+  const amtCol  = findCol(sample, ['value', 'amount', 'debit/credit']);
+  const catCol  = findCol(sample, ['category', 'up category']);
+
+  if (!dateCol || !descCol || !amtCol) return null;
+
+  const txs = rows.map(r => {
+    const date = parseDate(r[dateCol] || '');
+    if (!date) return null;
+    const amount = parseAmount(r[amtCol]);
+    const desc   = r[descCol] || '';
+    const upCat  = catCol ? (r[catCol] || '') : '';
+
+    const isIncome = amount > 0;
+    const absAmt   = Math.abs(amount);
+
+    let merchant = null;
+    for (const [cat, patterns] of Object.entries(MERCHANT_MAP)) {
+      if (patterns.some(p => p.test(desc))) { merchant = cat; break; }
+    }
+
+    const mappedCat = UPBANK_CATEGORY_MAP[upCat];
+    const cat = mappedCat || merchant || (isIncome ? 'income' : 'other');
+
+    return { date, desc, absAmt, isIncome, merchant, cat, upCat };
+  }).filter(Boolean);
+
+  if (txs.length === 0) return null;
+  return aggregateTxs(txs);
+}
+
+// ─── UNIVERSAL BANK ───────────────────────────────────────────────────────────
+// Parses any Australian bank CSV using the column map from detectBankFormat().
+// Produces the same output shape as processUpBank() so all dashboard tabs
+// work without modification.
+export function processUniversalBank(rows, format) {
+  if (!rows || rows.length === 0 || !format) return null;
+
+  // Delegate to the bank-specific processor where one exists
+  if (format.bank === 'upbank')  return processUpBank(rows);
+  if (format.bank === 'commsec') return null; // investment CSV, not spending
+
+  const { columns, amountStyle } = format;
+  if (!columns.date) return null;
+
+  const txs = rows.map(r => {
+    // ── Date ────────────────────────────────────────────────────────────────
+    const date = parseDate(r[columns.date] || '');
+    if (!date) return null;
+
+    // ── Description ─────────────────────────────────────────────────────────
+    const desc = columns.description ? (r[columns.description] || '').trim() : '';
+
+    // ── Amount ──────────────────────────────────────────────────────────────
+    let amount;
+    if (amountStyle === 'split') {
+      // Debit column = money out (positive number → negative flow)
+      // Credit column = money in (positive number → positive flow)
+      const debit  = columns.debit  ? parseAmount(r[columns.debit]  || '') : 0;
+      const credit = columns.credit ? parseAmount(r[columns.credit] || '') : 0;
+      if (debit === 0 && credit === 0) return null; // empty / header-only row
+      amount = credit - debit;
+    } else {
+      if (!columns.amount) return null;
+      const raw = r[columns.amount] || '';
+      if (!raw.trim()) return null;
+      amount = parseAmount(raw);
+    }
+
+    const isIncome = amount > 0;
+    const absAmt   = Math.abs(amount);
+
+    // ── Categorise via MERCHANT_MAP ──────────────────────────────────────────
+    let merchant = null;
+    for (const [cat, patterns] of Object.entries(MERCHANT_MAP)) {
+      if (patterns.some(p => p.test(desc))) { merchant = cat; break; }
+    }
+
+    const cat = merchant || (isIncome ? 'income' : 'other');
+
+    return { date, desc, absAmt, isIncome, merchant, cat, upCat: '' };
+  }).filter(Boolean);
+
+  if (txs.length === 0) return null;
+  return aggregateTxs(txs);
 }
 
 // ─── PAYPAL ──────────────────────────────────────────────────────────────────
@@ -583,4 +966,24 @@ export function processCommSec(rows) {
   }));
 
   return { shares, rowCount: shares.length };
+}
+
+// ─── PIPELINE ENTRY POINT ────────────────────────────────────────────────────
+// Accepts raw CSV text (e.g. from FileReader) and returns parsed data or a
+// signal that manual column mapping is needed. Single function for the upload UI.
+export function processCSVText(text) {
+  const rows = parseCSV(text);
+  if (!rows || rows.length === 0) return { error: 'No data found in CSV' };
+
+  const format = detectBankFormat(rows);
+
+  if (format.bank === 'commsec') return { type: 'commsec', data: processCommSec(rows), format };
+  if (format.bank === 'paypal')  return { type: 'paypal',  data: processPayPal(rows),  format };
+  if (format.bank === 'upbank')  return { type: 'upbank',  data: processUpBank(rows),  format };
+
+  if (format.confidence !== 'manual') {
+    return { type: 'bank', data: processUniversalBank(rows, format), format };
+  }
+
+  return { type: 'manual', rows, format };
 }

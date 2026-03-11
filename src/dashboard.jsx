@@ -1,6 +1,6 @@
-import { useState, useMemo, useEffect } from "react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ComposedChart, Line, ReferenceLine, AreaChart, Area, Cell, LineChart } from "recharts";
-import { fetchCSV, processUpBank, processPayPal, processGateway, processCommSec } from "./dataLoader.js";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ComposedChart, Line, ReferenceLine, AreaChart, Area, Cell, LineChart, ReferenceDot } from "recharts";
+import { processCSVText, parseCSV, processUniversalBank, applyUserRules, aggregateTxs, extractMerchantPattern } from "./dataLoader.js";
 
 // ─── DEMO DATA ───────────────────────────────────────────────────────────────
 // Fictional persona: Alex & Jordan Chen, 14 Banksia Drive, Brunswick VIC 3056
@@ -25,6 +25,7 @@ export const DEMO_DATA = {
     vehicleValue: 18000,
     vehicleLabel: "Motorcycle",
     vehiclePurchase: 21477,
+    propertyValue: 820000,
     propertyShortName: "14 Banksia Dr",
     // Planner slider defaults / scenario values
     plannerSalaryMin: 10188,
@@ -506,6 +507,11 @@ const Lg=({items})=>(<div style={{display:"flex",justifyContent:"center",gap:11,
 const Note=({color,children})=>(<div style={{marginTop:7,padding:9,borderRadius:8,background:`${color}08`,border:`1px solid ${color}15`,fontSize:12,color:"#94a3b8",lineHeight:1.5}}>{children}</div>);
 const Row=({label,value,color,bold,note,borderTop})=>(<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:bold?"8px 0":"4px 0",borderTop:borderTop?"1px solid rgba(255,255,255,0.06)":"none",marginTop:borderTop?4:0}}><span style={{fontSize:13,color:bold?"#e2e8f0":"#94a3b8",fontWeight:bold?700:400}}>{label}{note&&<span style={{fontSize:10,color:"#475569",marginLeft:6}}>{note}</span>}</span><span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:bold?15:13,fontWeight:bold?700:600,color:color||"#cbd5e1"}}>{value}</span></div>);
 const Badge=({text,color})=>(<span style={{fontSize:9,padding:"2px 7px",borderRadius:20,fontWeight:700,background:`${color}15`,color,whiteSpace:"nowrap"}}>{text}</span>);
+
+const CAT_COLORS={grocery:'#34d399',restaurant:'#fb923c',takeaway:'#f97316',coffee:'#a78bfa',delivery:'#60a5fa',transport:'#38bdf8',fuel:'#facc15',toll:'#94a3b8',utilities:'#a8a29e',telco:'#6ee7b7',insurance:'#93c5fd',sub:'#c084fc',health:'#f472b6',fitness:'#86efac',home:'#fde68a',clothing:'#fca5a5',education:'#67e8f9',pets:'#bbf7d0',travel:'#7dd3fc',gambling:'#fb7185',government:'#94a3b8',income:'#34d399',transfer:'#64748b',mortgage:'#94a3b8',rent:'#94a3b8',amazon:'#f97316',paypal:'#3b82f6',shopping:'#e879f9',other:'#475569'};
+const ALL_CATS=['grocery','restaurant','takeaway','coffee','delivery','transport','fuel','toll','utilities','telco','insurance','sub','health','fitness','home','clothing','education','pets','travel','gambling','government','income','transfer','mortgage','rent','other'];
+
+
 const Card=({label,value,type,detail})=>(<div style={{padding:"9px 11px",borderRadius:10,background:type==="in"?"rgba(52,211,153,0.04)":"rgba(248,113,113,0.04)",border:`1px solid ${type==="in"?"rgba(52,211,153,0.08)":"rgba(248,113,113,0.08)"}`}}><div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,fontWeight:600,color:"#cbd5e1"}}>{label}</span><span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:700,fontSize:13,color:type==="in"?"#34d399":"#f87171"}}>{type==="in"?"+":"−"}{value}</span></div><div style={{fontSize:10,color:"#475569",marginTop:2}}>{detail}</div></div>);
 const xP={tick:{fill:"#64748b",fontSize:11},axisLine:{stroke:"rgba(255,255,255,0.05)"}};
 const yP={tickFormatter:fmtK,tick:{fill:"#64748b",fontSize:10},axisLine:false,tickLine:false};
@@ -554,7 +560,7 @@ const tabGroups=[
   {label:"Assets",   tabs:[{id:"networth",l:"💰 Net Worth"},{id:"property",l:"🏠 Property"}]},
   {label:"Spending", tabs:[{id:"committed",l:"📌 Committed"},{id:"health",l:"💊 Health"},{id:"variable",l:"🛒 Variable"},{id:"paypal",l:"💳 PayPal"},{id:"savings",l:"🏦 Savings"}]},
   {label:"Insights", tabs:[{id:"insights",l:"💡 Insights"},{id:"deep",l:"🔬 Deep Dive"},{id:"trend",l:"📉 Trend"},{id:"subs",l:"📱 Subs"},{id:"heatmap",l:"📅 Heatmap"},{id:"search",l:"🔍 Search"}]},
-  {label:"Planning", tabs:[{id:"tax",l:"💸 Tax"},{id:"compare",l:"⚖️ Compare"},{id:"growth",l:"🌱 Growth"}]},
+  {label:"Planning", tabs:[{id:"goals",l:"🎯 Goals"},{id:"tax",l:"💸 Tax"},{id:"compare",l:"⚖️ Compare"},{id:"growth",l:"🌱 Growth"}]},
   {label:"System",   tabs:[{id:"settings",l:"⚙️ Settings"}]},
 ];
 
@@ -590,6 +596,355 @@ const Slider = ({ label, value, onChange, min, max, step = 50, prefix = "$", col
     </div>
   </div>
 );
+
+// ─── CSV UPLOAD HELPER ────────────────────────────────────────────────────────
+function colMapStorageKey(headers) {
+  const sorted = [...headers].sort().join('|');
+  let h = 0;
+  for (let i = 0; i < sorted.length; i++) h = Math.imul(31, h) + sorted.charCodeAt(i) | 0;
+  return `comma_colmap_${(h >>> 0).toString(36)}`;
+}
+
+function buildFormatFromSaved(saved) {
+  return {
+    bank: 'unknown', bankLabel: 'Unknown Bank', confidence: 'mapped',
+    columns: {
+      date: saved.dateCol, description: saved.descCol,
+      amount: saved.amtStyle === 'single' ? saved.amountCol : null,
+      debit: saved.amtStyle === 'split' ? saved.debitCol : null,
+      credit: saved.amtStyle === 'split' ? saved.creditCol : null,
+      balance: saved.balanceCol || null, category: null,
+    },
+    amountStyle: saved.amtStyle,
+  };
+}
+
+function processUploadedFile(filename, rawCsvText) {
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  try {
+    const result = processCSVText(rawCsvText);
+    if (result.error) {
+      return { id, filename, rawCsvText, type: 'error', bankLabel: filename, status: 'error', rowCount: 0, dateRange: null, parsedData: null };
+    }
+    if (result.type === 'manual') {
+      // Auto-apply saved column mapping if one exists for these headers
+      const headers = result.rows.length > 0 ? Object.keys(result.rows[0]) : [];
+      try {
+        const saved = JSON.parse(localStorage.getItem(colMapStorageKey(headers)) || 'null');
+        if (saved) {
+          const data = processUniversalBank(result.rows, buildFormatFromSaved(saved));
+          if (data) return { id, filename, rawCsvText, type: 'bank', bankLabel: 'Unknown Bank', status: 'success', rowCount: data.rowCount || 0, dateRange: data.dateRange || null, parsedData: data };
+        }
+      } catch {}
+      return { id, filename, rawCsvText, type: 'manual', bankLabel: result.format?.bankLabel || 'Unknown Bank', status: 'manual', rowCount: result.rows?.length || 0, dateRange: null, parsedData: null };
+    }
+    if (!result.data) {
+      return { id, filename, rawCsvText, type: 'error', bankLabel: result.format?.bankLabel || filename, status: 'error', rowCount: 0, dateRange: null, parsedData: null };
+    }
+    const bankLabel = result.format?.bankLabel || (result.type === 'commsec' ? 'CommSec' : result.type === 'paypal' ? 'PayPal' : 'Bank');
+    const rowCount  = result.data.rowCount || 0;
+    const dateRange = result.data.dateRange || null;
+    return { id, filename, rawCsvText, type: result.type, bankLabel, status: 'success', rowCount, dateRange, parsedData: result.data };
+  } catch {
+    return { id, filename, rawCsvText, type: 'error', bankLabel: filename, status: 'error', rowCount: 0, dateRange: null, parsedData: null };
+  }
+}
+
+// ─── COLUMN MAPPING MODAL ────────────────────────────────────────────────────
+function ColumnMappingModal({ file, onClose, onSuccess }) {
+  const rows = useMemo(() => parseCSV(file.rawCsvText), [file.rawCsvText]);
+  const headers = useMemo(() => rows.length > 0 ? Object.keys(rows[0]) : [], [rows]);
+  const storageKey = useMemo(() => colMapStorageKey(headers), [headers]);
+
+  const saved = useMemo(() => {
+    try { return JSON.parse(localStorage.getItem(storageKey) || 'null'); } catch { return null; }
+  }, [storageKey]);
+
+  const [dateCol,    setDateCol]    = useState(saved?.dateCol    || '');
+  const [descCol,    setDescCol]    = useState(saved?.descCol    || '');
+  const [amtStyle,   setAmtStyle]   = useState(saved?.amtStyle   || 'single');
+  const [amountCol,  setAmountCol]  = useState(saved?.amountCol  || '');
+  const [debitCol,   setDebitCol]   = useState(saved?.debitCol   || '');
+  const [creditCol,  setCreditCol]  = useState(saved?.creditCol  || '');
+  const [balanceCol, setBalanceCol] = useState(saved?.balanceCol || '');
+  const [error,      setError]      = useState('');
+
+  const ColSelect = ({ value, onChange }) => (
+    <select
+      value={value}
+      onChange={e => { setError(''); onChange(e.target.value); }}
+      style={{
+        background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+        borderRadius: 6, color: value ? '#e2e8f0' : '#475569', fontSize: 12,
+        padding: '6px 8px', fontFamily: 'inherit', cursor: 'pointer', width: '100%', outline: 'none',
+      }}
+    >
+      <option value="">— select column —</option>
+      {headers.map(h => <option key={h} value={h}>{h}</option>)}
+    </select>
+  );
+
+  const handleParse = () => {
+    if (!dateCol) { setError('Date column is required'); return; }
+    if (!descCol) { setError('Description column is required'); return; }
+    if (amtStyle === 'single' && !amountCol) { setError('Amount column is required'); return; }
+    if (amtStyle === 'split' && (!debitCol || !creditCol)) { setError('Both Debit and Credit columns are required'); return; }
+
+    const format = {
+      bank: 'unknown', bankLabel: 'Unknown Bank', confidence: 'mapped',
+      columns: {
+        date: dateCol, description: descCol,
+        amount: amtStyle === 'single' ? amountCol : null,
+        debit: amtStyle === 'split' ? debitCol : null,
+        credit: amtStyle === 'split' ? creditCol : null,
+        balance: balanceCol || null, category: null,
+      },
+      amountStyle: amtStyle,
+    };
+
+    const data = processUniversalBank(rows, format);
+    if (!data) { setError('No transactions found with this mapping. Try different column selections.'); return; }
+
+    localStorage.setItem(storageKey, JSON.stringify({ dateCol, descCol, amtStyle, amountCol, debitCol, creditCol, balanceCol }));
+    onSuccess(data);
+  };
+
+  const labelStyle = { fontSize: 11, color: '#94a3b8', display: 'block' };
+  const req = <span style={{ color: '#f87171' }}>*</span>;
+
+  return (
+    <div
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}
+    >
+      <div style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: 20, width: '100%', maxWidth: 580, maxHeight: '90vh', overflowY: 'auto' }}>
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#e2e8f0' }}>Map Columns</div>
+            <div style={{ fontSize: 11, color: '#475569', marginTop: 2 }}>{file.filename} · {rows.length} rows</div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#475569', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: '0 4px' }}>✕</button>
+        </div>
+
+        {/* CSV preview */}
+        <div style={{ overflowX: 'auto', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)', marginBottom: 16 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+            <thead>
+              <tr style={{ background: 'rgba(255,255,255,0.04)' }}>
+                {headers.map(h => (
+                  <th key={h} style={{ padding: '7px 10px', textAlign: 'left', color: '#94a3b8', fontWeight: 600, whiteSpace: 'nowrap', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.slice(0, 3).map((row, i) => (
+                <tr key={i}>
+                  {headers.map(h => (
+                    <td key={h} style={{ padding: '6px 10px', color: '#64748b', whiteSpace: 'nowrap', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>{row[h]}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Amount style toggle */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+          {[['single', 'Single amount column'], ['split', 'Separate debit / credit']].map(([v, l]) => (
+            <button
+              key={v}
+              onClick={() => { setAmtStyle(v); setError(''); }}
+              style={{
+                flex: 1, padding: '7px 0', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', fontSize: 11, fontWeight: 600,
+                border: `1px solid ${amtStyle === v ? 'rgba(96,165,250,0.4)' : 'rgba(255,255,255,0.07)'}`,
+                background: amtStyle === v ? 'rgba(96,165,250,0.1)' : 'transparent',
+                color: amtStyle === v ? '#93c5fd' : '#64748b',
+              }}
+            >{l}</button>
+          ))}
+        </div>
+
+        {/* Column selectors */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+          <label style={labelStyle}>Date {req}<div style={{ marginTop: 4 }}><ColSelect value={dateCol} onChange={setDateCol} /></div></label>
+          <label style={labelStyle}>Description {req}<div style={{ marginTop: 4 }}><ColSelect value={descCol} onChange={setDescCol} /></div></label>
+          {amtStyle === 'single' ? (
+            <label style={labelStyle}>Amount {req}<div style={{ marginTop: 4 }}><ColSelect value={amountCol} onChange={setAmountCol} /></div></label>
+          ) : (
+            <>
+              <label style={labelStyle}>Debit (money out) {req}<div style={{ marginTop: 4 }}><ColSelect value={debitCol} onChange={setDebitCol} /></div></label>
+              <label style={labelStyle}>Credit (money in) {req}<div style={{ marginTop: 4 }}><ColSelect value={creditCol} onChange={setCreditCol} /></div></label>
+            </>
+          )}
+          <label style={labelStyle}>Balance <span style={{ color: '#475569', fontSize: 10 }}>(optional)</span><div style={{ marginTop: 4 }}><ColSelect value={balanceCol} onChange={setBalanceCol} /></div></label>
+        </div>
+
+        {error && (
+          <div style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', color: '#f87171', fontSize: 12, marginBottom: 12 }}>{error}</div>
+        )}
+
+        <button
+          onClick={handleParse}
+          style={{ width: '100%', padding: '12px 0', borderRadius: 10, background: 'rgba(96,165,250,0.15)', border: '1px solid rgba(96,165,250,0.3)', color: '#93c5fd', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
+        >Parse transactions</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── WELCOME SCREEN ───────────────────────────────────────────────────────────
+function WelcomeScreen({ onLaunchDemo, onUploadFiles }) {
+  const [dropActive, setDropActive] = useState(false);
+  const welcomeFileRef = useRef(null);
+
+  return (
+    <div style={{
+      fontFamily: "'Instrument Sans', -apple-system, sans-serif",
+      background: "#0b0b17",
+      color: "#e2e8f0",
+      minHeight: "100vh",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "48px 24px",
+    }}>
+      <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+      {/* Logo */}
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 52 }}>
+        <div style={{
+          width: 60, height: 60,
+          background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+          borderRadius: 18,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 34, fontWeight: 700, color: "#fff",
+          marginBottom: 18,
+          boxShadow: "0 8px 32px rgba(99,102,241,0.35)",
+          lineHeight: 1,
+          paddingTop: 6,
+          userSelect: "none",
+        }}>
+          ,
+        </div>
+        <h1 style={{ margin: 0, fontSize: 30, fontWeight: 700, color: "#f1f5f9", letterSpacing: "-0.02em" }}>Comma</h1>
+        <p style={{ margin: "10px 0 0", fontSize: 14, color: "#475569", textAlign: "center", maxWidth: 340, lineHeight: 1.65 }}>
+          Your personal finance dashboard — built for Australian households
+        </p>
+      </div>
+
+      {/* Two cards */}
+      <div style={{
+        display: "flex",
+        gap: 16,
+        width: "100%",
+        maxWidth: 740,
+        flexWrap: "wrap",
+        justifyContent: "center",
+        marginBottom: 36,
+      }}>
+
+        {/* Card A — Demo */}
+        <div style={{
+          flex: "1 1 290px",
+          background: "rgba(255,255,255,0.025)",
+          border: "1px solid rgba(255,255,255,0.07)",
+          borderRadius: 20,
+          padding: "32px 28px",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "flex-start",
+          gap: 10,
+        }}>
+          <div style={{ fontSize: 30 }}>📊</div>
+          <div style={{ fontSize: 17, fontWeight: 700, color: "#f1f5f9", lineHeight: 1.3 }}>Explore with demo data</div>
+          <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.65 }}>
+            See what Comma can do with realistic Australian financial data
+          </div>
+          <div style={{ flex: 1, minHeight: 16 }} />
+          <button
+            onClick={onLaunchDemo}
+            style={{
+              marginTop: 4,
+              padding: "12px 28px",
+              background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+              border: "none",
+              borderRadius: 10,
+              color: "#fff",
+              fontSize: 14,
+              fontWeight: 600,
+              fontFamily: "inherit",
+              cursor: "pointer",
+              boxShadow: "0 4px 16px rgba(99,102,241,0.28)",
+              transition: "opacity 0.15s",
+            }}
+            onMouseOver={e => e.currentTarget.style.opacity = '0.85'}
+            onMouseOut={e => e.currentTarget.style.opacity = '1'}
+          >
+            Launch Demo
+          </button>
+        </div>
+
+        {/* Card B — Upload */}
+        <div style={{
+          flex: "1 1 290px",
+          background: "rgba(255,255,255,0.025)",
+          border: "1px solid rgba(255,255,255,0.07)",
+          borderRadius: 20,
+          padding: "32px 28px",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "flex-start",
+          gap: 10,
+        }}>
+          <div style={{ fontSize: 30 }}>🏦</div>
+          <div style={{ fontSize: 17, fontWeight: 700, color: "#f1f5f9", lineHeight: 1.3 }}>Upload your bank CSV</div>
+          <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.65 }}>
+            Drag in your bank export and see your own finances in seconds
+          </div>
+          {/* Drop zone */}
+          <div
+            onDragOver={e => { e.preventDefault(); setDropActive(true); }}
+            onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDropActive(false); }}
+            onDrop={e => { e.preventDefault(); setDropActive(false); if (e.dataTransfer.files.length) onUploadFiles(e.dataTransfer.files); }}
+            onClick={() => welcomeFileRef.current?.click()}
+            style={{
+              width: "100%",
+              border: `1.5px dashed ${dropActive ? 'rgba(99,102,241,0.6)' : 'rgba(255,255,255,0.12)'}`,
+              borderRadius: 12,
+              padding: "22px 16px",
+              textAlign: "center",
+              cursor: "pointer",
+              background: dropActive ? "rgba(99,102,241,0.06)" : "rgba(255,255,255,0.015)",
+              transition: "border-color 0.2s, background 0.2s",
+              boxSizing: "border-box",
+              marginTop: 4,
+            }}
+          >
+            <input
+              ref={welcomeFileRef}
+              type="file"
+              accept=".csv"
+              multiple
+              style={{ display: "none" }}
+              onChange={e => { if (e.target.files.length) onUploadFiles(e.target.files); e.target.value = ''; }}
+            />
+            <div style={{ fontSize: 22, marginBottom: 8, opacity: 0.3 }}>⬆</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0", marginBottom: 4 }}>Drop CSV here</div>
+            <div style={{ fontSize: 11, color: "#475569" }}>or click to browse · auto-detects format</div>
+          </div>
+        </div>
+
+      </div>
+
+      {/* Bank compatibility */}
+      <div style={{ fontSize: 12, color: "#2d3748", textAlign: "center" }}>
+        Works with CBA, NAB, ANZ, Westpac, Up Bank, Macquarie, and more
+      </div>
+    </div>
+  );
+}
 
 function DashboardInner() {
   const [tab, setTab] = useState("planner");
@@ -633,23 +988,37 @@ function DashboardInner() {
   const [growthYears, setGrowthYears] = useState(10);
   const [extraCash, setExtraCash] = useState(400);
 
-  // ─── LIVE DATA STATE ─────────────────────────────────────────────────────
-  const DEFAULT_CONFIG = { upbankUrl: '', paypalUrl: '', gatewayMainUrl: '', gatewayTopUrl: '', commsecUrl: '' };
-  const [sheetConfig, setSheetConfig] = useState(() => { try { return JSON.parse(localStorage.getItem('sheetConfig') || 'null') || DEFAULT_CONFIG; } catch { return DEFAULT_CONFIG; } });
-  const [draftConfig, setDraftConfig] = useState(sheetConfig);
-  const [upData, setUpData]     = useState(null);
-  const [ppData, setPpData]     = useState(null);
-  const [gwData, setGwData]     = useState(null);
-  const [csData, setCsData]     = useState(null);
-  const [gwMainRows, setGwMainRows] = useState(null);
-  const [gwTopRows,  setGwTopRows]  = useState(null);
-  const [srcStatus, setSrcStatus] = useState({ up: 'idle', pp: 'idle', gw: 'idle', cs: 'idle' });
-  const [srcError,  setSrcError]  = useState({ up: '', pp: '', gw: '', cs: '' });
-  const [isMobile,  setIsMobile]  = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
-  const [menuOpen,  setMenuOpen]  = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchCat,   setSearchCat]   = useState('all');
-  const [savedFlash,  setSavedFlash]  = useState(false);
+  // ─── UPLOAD STATE ─────────────────────────────────────────────────────────
+  const fileInputRef = useRef(null);
+  const [dropActive,    setDropActive]    = useState(false);
+  const [confirmClear,  setConfirmClear]  = useState(false);
+  const [uploadedFiles, setUploadedFiles] = useState(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('comma_uploaded_data') || '[]');
+      return stored.map(item => processUploadedFile(item.filename, item.rawCsvText));
+    } catch { return []; }
+  });
+  const [isMobile,       setIsMobile]       = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
+  const [menuOpen,       setMenuOpen]       = useState(false);
+  const [searchQuery,    setSearchQuery]    = useState('');
+  const [searchCat,      setSearchCat]      = useState('all');
+  const [openCatPicker,  setOpenCatPicker]  = useState(null);  // tx key (date+desc) or null
+  const [catConfirm,     setCatConfirm]     = useState(null);  // {pattern, cat, count, isFirst} or null
+  const [pendingRule,    setPendingRule]    = useState(null);  // {txKey, tx, cat, editPattern} or null
+  const [mappingFileId,  setMappingFileId]  = useState(null);
+  const [showCatHint,    setShowCatHint]    = useState(() => {
+    try { return !localStorage.getItem('comma_categorise_hint_dismissed'); } catch { return true; }
+  });
+  const [firstRecatDone, setFirstRecatDone] = useState(() => {
+    try { return !!localStorage.getItem('comma_first_recat_done'); } catch { return false; }
+  });
+  const [showWelcome,    setShowWelcome]    = useState(() => {
+    try {
+      if (localStorage.getItem('comma_onboarded')) return false;
+      const stored = JSON.parse(localStorage.getItem('comma_uploaded_data') || '[]');
+      return stored.length === 0;
+    } catch { return true; }
+  });
 
   useEffect(() => {
     const h = () => setIsMobile(window.innerWidth < 768);
@@ -657,63 +1026,163 @@ function DashboardInner() {
     return () => window.removeEventListener('resize', h);
   }, []);
 
+  // Persist raw CSV texts to localStorage whenever uploadedFiles changes
   useEffect(() => {
-    if (!sheetConfig.upbankUrl) return;
-    setSrcStatus(s => ({ ...s, up: 'loading' }));
-    fetchCSV(sheetConfig.upbankUrl)
-      .then(rows => {
-        const result = processUpBank(rows);
-        if (!result) { setSrcError(s => ({ ...s, up: 'Could not parse CSV — check column headers match Up Bank export' })); setSrcStatus(s => ({ ...s, up: 'error' })); }
-        else { setUpData(result); setSrcStatus(s => ({ ...s, up: 'loaded' })); }
-      })
-      .catch(e   => { setSrcError(s => ({ ...s, up: e.message })); setSrcStatus(s => ({ ...s, up: 'error' })); });
-  }, [sheetConfig.upbankUrl]);
+    const toStore = uploadedFiles.map(({ id, filename, rawCsvText, type, bankLabel, status, rowCount }) =>
+      ({ id, filename, rawCsvText, type, bankLabel, status, rowCount })
+    );
+    localStorage.setItem('comma_uploaded_data', JSON.stringify(toStore));
+  }, [uploadedFiles]);
+
+  // ─── GOALS STATE ──────────────────────────────────────────────────────────
+  const [goals, setGoals] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('comma_goals') || '[]'); }
+    catch { return []; }
+  });
 
   useEffect(() => {
-    if (!sheetConfig.paypalUrl) return;
-    setSrcStatus(s => ({ ...s, pp: 'loading' }));
-    fetchCSV(sheetConfig.paypalUrl)
-      .then(rows => {
-        const result = processPayPal(rows);
-        if (!result) { setSrcError(s => ({ ...s, pp: 'Could not parse CSV — check column headers match PayPal export' })); setSrcStatus(s => ({ ...s, pp: 'error' })); }
-        else { setPpData(result); setSrcStatus(s => ({ ...s, pp: 'loaded' })); }
-      })
-      .catch(e   => { setSrcError(s => ({ ...s, pp: e.message })); setSrcStatus(s => ({ ...s, pp: 'error' })); });
-  }, [sheetConfig.paypalUrl]);
+    localStorage.setItem('comma_goals', JSON.stringify(goals));
+  }, [goals]);
+
+  const addGoal    = (goal)          => setGoals(prev => [...prev, goal]);
+  const updateGoal = (id, updates)   => setGoals(prev => prev.map(g => g.id === id ? { ...g, ...updates } : g));
+  const deleteGoal = (id)            => setGoals(prev => prev.filter(g => g.id !== id));
+
+  // ─── BALANCE SHEET STATE ─────────────────────────────────────────────────
+  const BS_DEFAULT_ASSETS = [{ id:'property',name:'Property',value:0,icon:'🏠' },{ id:'savings',name:'Savings',value:0,icon:'💰' },{ id:'shares',name:'Shares',value:0,icon:'📈' },{ id:'super',name:'Superannuation',value:0,icon:'🏦' },{ id:'vehicle',name:'Vehicle',value:0,icon:'🚗' }];
+  const BS_DEFAULT_LIABS  = [{ id:'mortgage',name:'Mortgage',value:0,icon:'🏠' },{ id:'car_loan',name:'Car Loan',value:0,icon:'🚗' },{ id:'credit_card',name:'Credit Card',value:0,icon:'💳' },{ id:'hecs',name:'HECS-HELP',value:0,icon:'🎓' }];
+  const [bsAssets, setBsAssets] = useState(() => {
+    try { const s = JSON.parse(localStorage.getItem('comma_balance_sheet') || 'null'); return s?.assets ?? BS_DEFAULT_ASSETS; }
+    catch { return BS_DEFAULT_ASSETS; }
+  });
+  const [bsLiabilities, setBsLiabilities] = useState(() => {
+    try { const s = JSON.parse(localStorage.getItem('comma_balance_sheet') || 'null'); return s?.liabilities ?? BS_DEFAULT_LIABS; }
+    catch { return BS_DEFAULT_LIABS; }
+  });
+  useEffect(() => {
+    localStorage.setItem('comma_balance_sheet', JSON.stringify({ assets: bsAssets, liabilities: bsLiabilities }));
+  }, [bsAssets, bsLiabilities]);
+  const [editingBsCell,    setEditingBsCell]    = useState(null); // { type:'asset'|'liability', id }
+  const [editingBsValue,   setEditingBsValue]   = useState('');
+  const [bsHoveredId,      setBsHoveredId]      = useState(null); // { type, id }
+  const [showAddAsset,     setShowAddAsset]     = useState(false);
+  const [showAddLiability, setShowAddLiability] = useState(false);
+  const [newBsDraft,       setNewBsDraft]       = useState({ icon:'💰', name:'', value:'' });
+
+  // ─── NET WORTH SNAPSHOTS ──────────────────────────────────────────────────
+  const [nwSnapshots, setNwSnapshots] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('comma_nw_snapshots') || '[]'); }
+    catch { return []; }
+  });
+  useEffect(() => {
+    localStorage.setItem('comma_nw_snapshots', JSON.stringify(nwSnapshots));
+  }, [nwSnapshots]);
+  const [nwSnapshotMsg,        setNwSnapshotMsg]        = useState(null); // confirmation string
+  const [nwSnapshotConfirm,    setNwSnapshotConfirm]    = useState(false); // pending replace?
+  const [nwSelSnap,            setNwSelSnap]            = useState(null);  // clicked snapshot for breakdown
+  const [nwExpandedSnaps,      setNwExpandedSnaps]      = useState(() => new Set());
+  const [nwDeleteConfirm,      setNwDeleteConfirm]      = useState(null);  // snap id pending delete
+
+  // ─── USER RULES STATE ─────────────────────────────────────────────────────
+  const [userRules, setUserRules] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('comma_user_rules') || '{}'); }
+    catch { return {}; }
+  });
 
   useEffect(() => {
-    if (!sheetConfig.gatewayMainUrl) return;
-    fetchCSV(sheetConfig.gatewayMainUrl).then(rows => setGwMainRows(rows)).catch(() => {});
-  }, [sheetConfig.gatewayMainUrl]);
+    localStorage.setItem('comma_user_rules', JSON.stringify(userRules));
+  }, [userRules]);
 
   useEffect(() => {
-    if (!sheetConfig.gatewayTopUrl) return;
-    fetchCSV(sheetConfig.gatewayTopUrl).then(rows => setGwTopRows(rows)).catch(() => {});
-  }, [sheetConfig.gatewayTopUrl]);
+    if (!catConfirm) return;
+    const t = setTimeout(() => setCatConfirm(null), 4000);
+    return () => clearTimeout(t);
+  }, [catConfirm]);
 
+  const addUserRule    = (pattern, category) => setUserRules(prev => ({ ...prev, [pattern]: category }));
+  const deleteUserRule = (pattern)            => setUserRules(prev => { const n = { ...prev }; delete n[pattern]; return n; });
+  const getUserRules   = ()                   => userRules;
+
+  const [showImportRules, setShowImportRules] = useState(false);
+  const [importRulesText, setImportRulesText] = useState('');
+  const [importRulesStatus, setImportRulesStatus] = useState(null); // {ok:bool, msg:string}
+
+  // Re-apply user rules to all bank/upbank files whenever rules change.
+  // Always apply to originalRawTxs (pre-rule data) so deleting a rule correctly reverts categories.
   useEffect(() => {
-    if (!gwMainRows && !gwTopRows) return;
-    setSrcStatus(s => ({ ...s, gw: 'loading' }));
-    try {
-      setGwData(processGateway(gwMainRows, gwTopRows));
-      setSrcStatus(s => ({ ...s, gw: 'loaded' }));
-    } catch (e) {
-      setSrcError(s => ({ ...s, gw: e.message }));
-      setSrcStatus(s => ({ ...s, gw: 'error' }));
+    setUploadedFiles(prev => prev.map(f => {
+      if ((f.type !== 'bank' && f.type !== 'upbank') || !f.parsedData?.rawTxs) return f;
+      const baseRawTxs = f.originalRawTxs || f.parsedData.rawTxs;
+      const recatTxs = applyUserRules(baseRawTxs, userRules);
+      return { ...f, originalRawTxs: baseRawTxs, parsedData: aggregateTxs(recatTxs) };
+    }));
+  }, [userRules]);
+
+  const [showGoalForm,   setShowGoalForm]   = useState(false);
+  const [editingGoalId,  setEditingGoalId]  = useState(null);
+  const [deletingGoalId, setDeletingGoalId] = useState(null);
+  const [goalDraft,      setGoalDraft]      = useState({ emoji:'🎯', name:'', targetAmount:'', targetDate:'', savedSoFar:'0' });
+
+  const handleUploadedFiles = (fileList) => {
+    Array.from(fileList).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = e => {
+        let record = processUploadedFile(file.name, e.target.result);
+        if ((record.type === 'bank' || record.type === 'upbank') && record.parsedData?.rawTxs) {
+          const originalRawTxs = record.parsedData.rawTxs;
+          if (Object.keys(userRules).length > 0) {
+            record = { ...record, originalRawTxs, parsedData: aggregateTxs(applyUserRules(originalRawTxs, userRules)) };
+          } else {
+            record = { ...record, originalRawTxs };
+          }
+        }
+        setUploadedFiles(prev => [...prev, record]);
+      };
+      reader.readAsText(file);
+    });
+  };
+
+  const handleMappingSuccess = (fileId, data) => {
+    setUploadedFiles(prev => prev.map(f => {
+      if (f.id !== fileId) return f;
+      const originalRawTxs = data?.rawTxs;
+      let parsedData = data;
+      if (originalRawTxs && Object.keys(userRules).length > 0) {
+        parsedData = aggregateTxs(applyUserRules(originalRawTxs, userRules));
+      }
+      return { ...f, status: 'success', type: 'bank', bankLabel: 'Unknown Bank', rowCount: parsedData.rowCount || 0, dateRange: parsedData.dateRange || null, parsedData, originalRawTxs };
+    }));
+    setMappingFileId(null);
+  };
+
+  // Seed Planner salary slider with live avg income when data first loads
+  const salarySeeded = useRef(false);
+  useEffect(() => {
+    if (upData && !salarySeeded.current && upData.pnl?.length > 0) {
+      const avg = Math.round(upData.pnl.reduce((s,r)=>s+r.i,0)/upData.pnl.length);
+      if (avg > 0) { setSalary(Math.min(15000, Math.max(P.plannerSalaryMin, avg))); salarySeeded.current = true; }
     }
-  }, [gwMainRows, gwTopRows]);
+  }, [upData]);
 
-  useEffect(() => {
-    if (!sheetConfig.commsecUrl) return;
-    setSrcStatus(s => ({ ...s, cs: 'loading' }));
-    fetchCSV(sheetConfig.commsecUrl)
-      .then(rows => {
-        const result = processCommSec(rows);
-        if (!result) { setSrcError(s => ({ ...s, cs: 'Could not parse CSV — check column headers match CommSec export' })); setSrcStatus(s => ({ ...s, cs: 'error' })); }
-        else { setCsData(result); setSrcStatus(s => ({ ...s, cs: 'loaded' })); }
-      })
-      .catch(e   => { setSrcError(s => ({ ...s, cs: e.message })); setSrcStatus(s => ({ ...s, cs: 'error' })); });
-  }, [sheetConfig.commsecUrl]);
+  const handleLaunchDemo = () => {
+    localStorage.setItem('comma_onboarded', 'true');
+    setShowWelcome(false);
+    setTab('overview');
+  };
+
+  const handleWelcomeUpload = (fileList) => {
+    Array.from(fileList).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const record = processUploadedFile(file.name, e.target.result);
+        setUploadedFiles(prev => [...prev, record]);
+        localStorage.setItem('comma_onboarded', 'true');
+        setShowWelcome(false);
+        setTab('overview');
+      };
+      reader.readAsText(file);
+    });
+  };
 
   // ─── PLANNER CALCULATIONS ────────────────────────────────────────────────
   const plan = useMemo(() => {
@@ -827,6 +1296,21 @@ function DashboardInner() {
     return { strategies };
   }, [extraCash, sharesValue]);
 
+  // ─── LIVE DATA FROM UPLOADS ──────────────────────────────────────────────
+  const upData = useMemo(() =>
+    uploadedFiles.filter(f => f.type === 'bank' || f.type === 'upbank').at(-1)?.parsedData ?? null,
+    [uploadedFiles]
+  );
+  const ppData = useMemo(() =>
+    uploadedFiles.filter(f => f.type === 'paypal').at(-1)?.parsedData ?? null,
+    [uploadedFiles]
+  );
+  const csData = useMemo(() =>
+    uploadedFiles.filter(f => f.type === 'commsec').at(-1)?.parsedData ?? null,
+    [uploadedFiles]
+  );
+  const gwData = null; // mortgage tab: demo data only
+
   // ─── DERIVED LIVE DATA ───────────────────────────────────────────────────
   const pnl     = upData?.pnl     ?? pnlHC;
   const amz     = upData?.amz     ?? amzHC;
@@ -848,13 +1332,26 @@ function DashboardInner() {
   })();
 
   const surplusColor = plan.surplus >= 200 ? "#34d399" : plan.surplus >= 0 ? "#fbbf24" : "#f87171";
-  const dailyTotals  = upData?.dailyTotals  ?? {};
-  const transactions = upData?.transactions ?? [];
+  const dailyTotals  = upData?.dailyTotals  ?? DEMO_DATA.dailyTotals;
+  const transactions = upData?.transactions ?? DEMO_DATA.transactions;
   const filteredTxs  = useMemo(() => transactions.filter(tx => {
     const matchQ = !searchQuery || tx.desc.toLowerCase().includes(searchQuery.toLowerCase());
     const matchC = searchCat === 'all' || tx.cat === searchCat;
     return matchQ && matchC;
   }), [transactions, searchQuery, searchCat]);
+
+  // ─── DERIVED DISPLAY METRICS ─────────────────────────────────────────────
+  const bankTxCount = uploadedFiles.filter(f=>(f.type==='bank'||f.type==='upbank')&&f.status==='success').reduce((s,f)=>s+f.rowCount,0);
+  const isLiveData  = bankTxCount > 0;
+  const uncatCount  = isLiveData ? transactions.filter(tx => !tx.cat || tx.cat === 'other').length : 0;
+  const avgMonthlyIncome = Math.round(pnl.reduce((s,r)=>s+r.i,0)/Math.max(pnl.length,1));
+  const avgMonthlySpend  = Math.round(pnl.reduce((s,r)=>s+r.s,0)/Math.max(pnl.length,1));
+  const avgMonthlyNet    = Math.round(pnl.reduce((s,r)=>s+r.n,0)/Math.max(pnl.length,1));
+  const livePortfolioValue = shares.reduce((s,r)=>s+(r.value||0),0);
+  const liveSunAvg = dow.find(d=>d.d==='Sun')?.avg ?? DEMO_DATA.insightStats.sunAvg;
+  const liveMonAvg = dow.find(d=>d.d==='Mon')?.avg ?? DEMO_DATA.insightStats.monAvg;
+  const totalPnlNet = pnl.reduce((s,r)=>s+r.n,0);
+  const recentAvgNet = pnl.length>0 ? Math.round(pnl.slice(-2).reduce((s,r)=>s+r.n,0)/Math.min(pnl.length,2)) : 0;
 
   const healthScore = useMemo(() => {
     const recent = pnl.slice(-3);
@@ -877,11 +1374,96 @@ function DashboardInner() {
     return { total, grade, color, s1, s2, s3, s4, savingsRate, positiveMonths };
   }, [pnl, mortBal, shares]);
 
+  // ─── GOALS HELPERS ───────────────────────────────────────────────────────
+  const GOAL_EMOJIS     = ['🏠','🛡️','✈️','🚗','💍','🎓','👶','💻','🏋️','🎸','🐕','💰'];
+  const BS_EMOJIS       = ['🏠','💰','📈','🏦','🚗','✈️','💎','🏢','🎓','💳','🐕','💻'];
+  const GOAL_TEMPLATES  = [
+    { emoji:'🏠', name:'House Deposit',  targetAmount:60000, monthsOut:36 },
+    { emoji:'🛡️', name:'Emergency Fund', targetAmount:10000, monthsOut:12 },
+    { emoji:'✈️', name:'Holiday',        targetAmount:5000,  monthsOut:6  },
+  ];
+  const GOAL_COLORS      = ['#4f6ef7','#34d399','#f59e0b','#f87171','#a78bfa','#38bdf8','#fb923c','#e879f9'];
+  const goalTotalTarget  = goals.reduce((s,g) => s+(g.targetAmount||0), 0);
+  const goalTotalSaved   = goals.reduce((s,g) => s+(g.savedSoFar||0),   0);
+  const goalPerMonthly   = goals.length > 0 && plan.surplus > 0 ? plan.surplus / goals.length : 0;
+  const actualAvgSavings = upData?.pnl?.length > 0 ? Math.round(upData.pnl.reduce((s,r)=>s+r.n,0)/upData.pnl.length) : null;
+  const hasActualData    = actualAvgSavings !== null;
+  const goalPerActual    = hasActualData && goals.length > 0 ? actualAvgSavings / goals.length : 0;
+  const goalAddMonths    = (m) => { const d = new Date(); d.setMonth(d.getMonth()+m); return d.toISOString().slice(0,10); };
+  const goalFmtDate      = (ds) => { if (!ds) return '—'; const d = new Date(ds+'T00:00:00'); return d.toLocaleDateString('en-AU',{month:'short',year:'numeric'}); };
+  const goalProjDate     = (g) => {
+    const rem = (g.targetAmount||0) - (g.savedSoFar||0);
+    if (rem <= 0) return 'Complete';
+    const fmt = (mo) => { const d = new Date(); d.setMonth(d.getMonth()+mo); return d.toLocaleDateString('en-AU',{month:'short',year:'numeric'}); };
+    const planMo = goalPerMonthly > 0 ? Math.ceil(rem / goalPerMonthly) : null;
+    const actMo  = goalPerActual  > 0 ? Math.ceil(rem / goalPerActual)  : null;
+    if (!planMo && !actMo) return 'Increase savings to project';
+    if (!hasActualData || !actMo) return planMo ? fmt(planMo) : 'Increase savings to project';
+    const planStr = planMo ? fmt(planMo) : null;
+    const actStr  = fmt(actMo);
+    if (planStr === actStr) return planStr;
+    return planStr ? `Plan: ${planStr} · Actual: ${actStr}` : `Actual: ${actStr}`;
+  };
+  const goalProjData     = useMemo(() => {
+    if (goals.length === 0) return { data: [], crossings: {}, actualCrossings: {} };
+    const perGoal    = goals.length > 0 && plan.surplus > 0 ? plan.surplus / goals.length : 0;
+    const perGoalAct = hasActualData && goals.length > 0 ? actualAvgSavings / goals.length : 0;
+    let maxMonths = 12;
+    goals.forEach(g => {
+      const rem = (g.targetAmount||0) - (g.savedSoFar||0);
+      if (rem > 0 && perGoal    > 0) maxMonths = Math.max(maxMonths, Math.min(36, Math.ceil(rem / perGoal)));
+      if (rem > 0 && perGoalAct > 0) maxMonths = Math.max(maxMonths, Math.min(36, Math.ceil(rem / perGoalAct)));
+    });
+    maxMonths = Math.min(36, maxMonths);
+    const data = [];
+    for (let m = 0; m <= maxMonths; m++) {
+      const d = new Date(); d.setMonth(d.getMonth() + m);
+      const pt = { month: d.toLocaleDateString('en-AU', { month: 'short', year: '2-digit' }) };
+      goals.forEach(g => {
+        pt[g.id] = Math.round(Math.min((g.savedSoFar||0) + m * perGoal, g.targetAmount||0));
+        if (hasActualData) pt[`${g.id}_act`] = Math.round(Math.min((g.savedSoFar||0) + m * perGoalAct, g.targetAmount||0));
+      });
+      data.push(pt);
+    }
+    const crossings = {};
+    const actualCrossings = {};
+    goals.forEach(g => {
+      for (let m = 0; m <= maxMonths; m++) {
+        if (!crossings[g.id] && perGoal > 0 && (g.savedSoFar||0) + m * perGoal >= (g.targetAmount||0)) {
+          const d = new Date(); d.setMonth(d.getMonth() + m);
+          crossings[g.id] = { month: data[m]?.month, label: d.toLocaleDateString('en-AU', { month: 'short', year: 'numeric' }) };
+        }
+        if (!actualCrossings[g.id] && hasActualData && perGoalAct > 0 && (g.savedSoFar||0) + m * perGoalAct >= (g.targetAmount||0)) {
+          const d = new Date(); d.setMonth(d.getMonth() + m);
+          actualCrossings[g.id] = { month: data[m]?.month, label: d.toLocaleDateString('en-AU', { month: 'short', year: 'numeric' }) };
+        }
+      }
+    });
+    return { data, crossings, actualCrossings };
+  }, [goals, plan.surplus, hasActualData, actualAvgSavings]);
+  const openGoalEdit     = (g) => { setEditingGoalId(g.id); setGoalDraft({emoji:g.emoji,name:g.name,targetAmount:String(g.targetAmount),targetDate:g.targetDate||'',savedSoFar:String(g.savedSoFar||0)}); setShowGoalForm(true); };
+  const applyGoalTpl     = (t) => { setEditingGoalId(null); setGoalDraft({emoji:t.emoji,name:t.name,targetAmount:String(t.targetAmount),targetDate:goalAddMonths(t.monthsOut),savedSoFar:'0'}); setShowGoalForm(true); };
+  const saveGoalDraft    = () => { const g={id:editingGoalId||('g'+Date.now()),emoji:goalDraft.emoji||'🎯',name:goalDraft.name||'Goal',targetAmount:parseFloat(goalDraft.targetAmount)||0,targetDate:goalDraft.targetDate,savedSoFar:parseFloat(goalDraft.savedSoFar)||0}; if(editingGoalId)updateGoal(editingGoalId,g);else addGoal(g); setShowGoalForm(false);setEditingGoalId(null); };
+  const cancelGoalForm   = () => { setShowGoalForm(false); setEditingGoalId(null); };
+
   const SidebarContent = ({ onSelect }) => (
     <>
-      <div style={{ padding: "0 10px", marginBottom: 24 }}>
+      <div style={{ padding: "0 10px", marginBottom: 12 }}>
         <h1 style={{ margin: "0 0 4px", fontSize: 17, fontWeight: 700, color: "#f1f5f9", lineHeight: 1.3 }}>Financial Dashboard</h1>
-        <div style={{ color: "#475569", fontSize: 11 }}>Jul 2025 — Feb 2026 · AUD</div>
+        <div style={{ color: "#475569", fontSize: 11 }}>{upData?.dateRange ? `${upData.dateRange.start} — ${upData.dateRange.end}` : "Sep '25 — Feb '26 · Demo"} · AUD</div>
+      </div>
+      <div style={{ padding: "0 10px", marginBottom: 16 }}>
+        {isLiveData ? (
+          <div style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 8px", borderRadius:8, background:"rgba(52,211,153,0.08)", border:"1px solid rgba(52,211,153,0.15)" }}>
+            <div style={{ width:6, height:6, borderRadius:"50%", background:"#34d399", flexShrink:0 }} />
+            <span style={{ fontSize:10, color:"#34d399", fontWeight:700 }}>Your data · {bankTxCount.toLocaleString()} transactions</span>
+          </div>
+        ) : (
+          <div style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 8px", borderRadius:8, background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.06)" }}>
+            <div style={{ width:6, height:6, borderRadius:"50%", background:"#475569", flexShrink:0 }} />
+            <span style={{ fontSize:10, color:"#475569" }}>Demo data — upload CSV to use your own</span>
+          </div>
+        )}
       </div>
       {tabGroups.map(group => (
         <div key={group.label} style={{ marginBottom: 2 }}>
@@ -893,6 +1475,8 @@ function DashboardInner() {
       ))}
     </>
   );
+
+  if (showWelcome) return <WelcomeScreen onLaunchDemo={handleLaunchDemo} onUploadFiles={handleWelcomeUpload} />;
 
   return (
     <div style={{ fontFamily: "'Instrument Sans',-apple-system,sans-serif", background: "#0b0b17", color: "#e2e8f0", minHeight: "100vh", display: "flex" }}>
@@ -925,6 +1509,23 @@ function DashboardInner() {
 
       {/* ═══ MAIN CONTENT ═══ */}
       <div style={{ flex: 1, padding: isMobile ? "64px 16px 48px" : "22px 24px 48px", minWidth: 0 }}>
+
+      {/* ─── Categorisation nudge banner ─── */}
+      {showCatHint && isLiveData && uncatCount > 0 && (
+        <div style={{ padding: "10px 14px", borderRadius: 10, background: "rgba(245,166,35,0.07)", border: "1px solid rgba(245,166,35,0.2)", fontSize: 12, color: "#f5a623", marginBottom: 14, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ flex: 1, minWidth: 160 }}>
+            Comma auto-categorised <strong>{transactions.length - uncatCount} of {transactions.length}</strong> transactions. Tap any 'other' transaction in Search to teach Comma the rest — it only takes one tap per merchant.
+          </span>
+          <button onClick={() => { setTab('search'); setSearchCat('other'); }}
+            style={{ background: "none", border: "1px solid rgba(245,166,35,0.3)", borderRadius: 6, color: "#f5a623", fontSize: 11, fontWeight: 600, padding: "4px 10px", cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>
+            Go to Search →
+          </button>
+          <button onClick={() => { setShowCatHint(false); localStorage.setItem('comma_categorise_hint_dismissed', 'true'); }}
+            style={{ background: "none", border: "none", color: "#f5a623", fontSize: 16, cursor: "pointer", padding: "0 2px", lineHeight: 1, opacity: 0.6, flexShrink: 0 }}>
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* ═══ PLANNER ═══ */}
       {tab === "planner" && (<div>
@@ -1021,7 +1622,21 @@ function DashboardInner() {
 
       {/* ═══ OVERVIEW ═══ */}
       {tab === "overview" && (<div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><St label="Net Worth" value={"$" + NW_NOW.toLocaleString()} accent="#34d399" /><St label="Surplus" value={"$" + DISC.toLocaleString()} sub="Forward" accent="#fbbf24" /><St label="Debt" value={"$" + NW_DEBT.toLocaleString()} accent="#f87171" /></div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {upData ? (
+            <>
+              <St label="Avg Income" value={"$" + avgMonthlyIncome.toLocaleString()} sub="/mo" accent="#34d399" />
+              <St label="Avg Spending" value={"$" + avgMonthlySpend.toLocaleString()} sub="/mo" accent="#f87171" />
+              <St label="Avg Net" value={(avgMonthlyNet>=0?"$":"-$") + Math.abs(avgMonthlyNet).toLocaleString()} sub="/mo" accent={avgMonthlyNet>=0?"#fbbf24":"#f87171"} />
+            </>
+          ) : (
+            <>
+              <St label="Net Worth" value={"$" + NW_NOW.toLocaleString()} accent="#34d399" />
+              <St label="Surplus" value={"$" + DISC.toLocaleString()} sub="Forward" accent="#fbbf24" />
+              <St label="Debt" value={"$" + NW_DEBT.toLocaleString()} accent="#f87171" />
+            </>
+          )}
+        </div>
 
         {/* Financial Health Score */}
         <div style={{ marginTop: 14, background: "linear-gradient(135deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))", border: `1px solid ${healthScore.color}22`, borderRadius: 16, padding: "16px 20px" }}>
@@ -1071,30 +1686,430 @@ function DashboardInner() {
       </div>)}
 
       {/* ═══ NET WORTH ═══ */}
-      {tab === "networth" && (<div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><St label="Assets" value={"$" + NW_ASSETS.toLocaleString()} accent="#34d399" /><St label="Debt" value={"$" + NW_DEBT.toLocaleString()} accent="#f87171" /><St label="Net Worth" value={"$" + NW_NOW.toLocaleString()} accent="#fbbf24" /></div>
-        <Sec icon="📊">Balance Sheet</Sec>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <div style={{ background: "rgba(52,211,153,0.04)", borderRadius: 14, border: "1px solid rgba(52,211,153,0.08)", padding: 14 }}>
-            <div style={{ fontSize: 10, color: "#34d399", textTransform: "uppercase", fontWeight: 700, marginBottom: 10 }}>Assets</div>
-            {[{ n: P.propertyShortName, v: P.propertyValue }, { n: "Shares", v: P.sharesPortfolioValue }, { n: P.vehicleLabel, v: P.vehicleValue }].map((a, i) => (<div key={i} style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}><span style={{ fontSize: 11, color: "#94a3b8" }}>{a.n}</span><span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: "#34d399" }}>${a.v.toLocaleString()}</span></div>))}
-            <div style={{ borderTop: "1px solid rgba(52,211,153,0.1)", paddingTop: 6, display: "flex", justifyContent: "space-between" }}><span style={{ fontWeight: 700 }}>Total</span><span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, color: "#34d399" }}>{"$" + NW_ASSETS.toLocaleString()}</span></div>
+      {tab === "networth" && (() => {
+        const DEFAULT_ASSET_IDS     = BS_DEFAULT_ASSETS.map(a => a.id);
+        const DEFAULT_LIABILITY_IDS = BS_DEFAULT_LIABS.map(l => l.id);
+        const isSheetEmpty  = bsAssets.every(a => a.value === 0) && bsLiabilities.every(l => l.value === 0);
+        const useDemoSheet  = isSheetEmpty && !csData && !isLiveData;
+        const demoAssets = [
+          { id:'property', name:P.propertyShortName,    value:P.propertyValue,        icon:'🏠' },
+          { id:'savings',  name:'Savings',               value:0,                      icon:'💰' },
+          { id:'shares',   name:'Shares',                value:P.sharesPortfolioValue, icon:'📈' },
+          { id:'super',    name:'Superannuation',        value:0,                      icon:'🏦' },
+          { id:'vehicle',  name:P.vehicleLabel,          value:P.vehicleValue,         icon:'🚗' },
+        ];
+        const demoLiabs = [
+          { id:'mortgage',    name:'Main mortgage', value:P.mainMortgage, icon:'🏠' },
+          { id:'car_loan',    name:'Top-up loan',   value:P.topupLoan,    icon:'🚗' },
+          { id:'credit_card', name:'Credit Card',   value:0,              icon:'💳' },
+          { id:'hecs',        name:'HECS-HELP',     value:0,              icon:'🎓' },
+        ];
+        const displayAssets = useDemoSheet ? demoAssets : bsAssets;
+        const displayLiabs  = useDemoSheet ? demoLiabs  : bsLiabilities;
+        const getAssetEff = a => (a.id === 'shares' && csData && livePortfolioValue > 0)
+          ? { value: livePortfolioValue, auto: true } : { value: a.value, auto: false };
+        const totalAssets = displayAssets.reduce((s, a) => s + getAssetEff(a).value, 0);
+        const totalLiab   = displayLiabs.reduce((s, l) => s + l.value, 0);
+        const netWorth    = totalAssets - totalLiab;
+        const propVal     = displayAssets.find(a => a.id === 'property')?.value ?? 0;
+        const lvr         = propVal > 0 ? ((totalLiab / propVal) * 100).toFixed(1) : null;
+
+        const startEdit = (type, item) => {
+          if (item.id === 'shares' && csData && livePortfolioValue > 0) return;
+          const realItem = (type === 'asset' ? bsAssets : bsLiabilities).find(x => x.id === item.id);
+          if (!realItem) return;
+          setEditingBsCell({ type, id: item.id });
+          setEditingBsValue(String(realItem.value));
+        };
+        const commitEdit = () => {
+          const val = parseFloat(String(editingBsValue).replace(/[,$\s]/g, '')) || 0;
+          if (editingBsCell.type === 'asset') setBsAssets(p => p.map(a => a.id === editingBsCell.id ? { ...a, value: val } : a));
+          else setBsLiabilities(p => p.map(l => l.id === editingBsCell.id ? { ...l, value: val } : l));
+          setEditingBsCell(null); setEditingBsValue('');
+        };
+        const cancelEdit = () => { setEditingBsCell(null); setEditingBsValue(''); };
+        const saveNewRow = (type) => {
+          const val = parseFloat(String(newBsDraft.value).replace(/[,$\s]/g, '')) || 0;
+          const row = { id: type + '_' + Date.now(), name: newBsDraft.name || (type === 'asset' ? 'Asset' : 'Liability'), value: val, icon: newBsDraft.icon };
+          if (type === 'asset') { setBsAssets(p => [...p, row]); setShowAddAsset(false); }
+          else { setBsLiabilities(p => [...p, row]); setShowAddLiability(false); }
+          setNewBsDraft({ icon: '💰', name: '', value: '' });
+        };
+
+        const renderRow = (item, type, color) => {
+          const { value: effVal, auto } = getAssetEff(item);
+          const isDefault = (type === 'asset' ? DEFAULT_ASSET_IDS : DEFAULT_LIABILITY_IDS).includes(item.id);
+          const isEditing = editingBsCell?.type === type && editingBsCell?.id === item.id;
+          const isHov     = bsHoveredId?.type === type && bsHoveredId?.id === item.id;
+          return (
+            <div key={item.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:5, borderRadius:6, padding:'2px 4px', background: isHov ? 'rgba(255,255,255,0.03)' : 'transparent', transition:'background 0.15s' }}
+              onMouseEnter={() => setBsHoveredId({ type, id: item.id })}
+              onMouseLeave={() => setBsHoveredId(null)}>
+              <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                <span style={{ fontSize:13 }}>{item.icon}</span>
+                <span style={{ fontSize:11, color:'#94a3b8' }}>{item.name}</span>
+                {auto && <span style={{ fontSize:9, color:'#60a5fa', background:'rgba(96,165,250,0.1)', borderRadius:4, padding:'1px 4px', lineHeight:1.4 }}>auto</span>}
+              </div>
+              <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                {isEditing ? (
+                  <input autoFocus style={{ background:'rgba(255,255,255,0.06)', border:`1px solid ${color}50`, borderRadius:6, padding:'2px 6px', color, fontFamily:"'JetBrains Mono',monospace", fontSize:11, width:90, outline:'none' }}
+                    value={editingBsValue}
+                    onChange={e => setEditingBsValue(e.target.value)}
+                    onBlur={commitEdit}
+                    onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') cancelEdit(); }} />
+                ) : (
+                  <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:11, color, cursor: auto ? 'default' : 'text', textDecoration: isHov && !auto ? 'underline dotted' : 'none', textUnderlineOffset:2 }}
+                    onClick={() => startEdit(type, item)}>
+                    ${effVal.toLocaleString()}
+                  </span>
+                )}
+                {!isDefault && !useDemoSheet && (
+                  <button onClick={() => type === 'asset' ? setBsAssets(p => p.filter(a => a.id !== item.id)) : setBsLiabilities(p => p.filter(l => l.id !== item.id))}
+                    style={{ background:'none', border:'none', color:'#475569', cursor:'pointer', fontSize:11, padding:'0 2px', lineHeight:1, opacity: isHov ? 1 : 0, transition:'opacity 0.15s' }}>✕</button>
+                )}
+              </div>
+            </div>
+          );
+        };
+
+        const renderAddForm = (type) => (
+          <div style={{ marginTop:8, padding:10, borderRadius:10, background:'rgba(255,255,255,0.02)', border:'1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ display:'flex', gap:3, flexWrap:'wrap', marginBottom:8 }}>
+              {BS_EMOJIS.map(e => (
+                <button key={e} onClick={() => setNewBsDraft(d => ({ ...d, icon:e }))}
+                  style={{ fontSize:15, padding:'3px 6px', borderRadius:7, cursor:'pointer', background: newBsDraft.icon === e ? 'rgba(79,110,247,0.2)' : 'rgba(255,255,255,0.04)', border: newBsDraft.icon === e ? '1px solid rgba(79,110,247,0.4)' : '1px solid rgba(255,255,255,0.06)' }}>
+                  {e}
+                </button>
+              ))}
+            </div>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6, marginBottom:8 }}>
+              <input placeholder="Name" value={newBsDraft.name} onChange={e => setNewBsDraft(d => ({ ...d, name:e.target.value }))}
+                style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:7, padding:'5px 8px', color:'#e2e8f0', fontSize:12, outline:'none' }} />
+              <div style={{ position:'relative' }}>
+                <span style={{ position:'absolute', left:8, top:'50%', transform:'translateY(-50%)', color:'#64748b', fontSize:12, pointerEvents:'none' }}>$</span>
+                <input placeholder="0" type="number" value={newBsDraft.value} onChange={e => setNewBsDraft(d => ({ ...d, value:e.target.value }))}
+                  style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:7, padding:'5px 8px 5px 18px', color:'#e2e8f0', fontSize:12, width:'100%', boxSizing:'border-box', outline:'none' }} />
+              </div>
+            </div>
+            <div style={{ display:'flex', gap:6 }}>
+              <button onClick={() => saveNewRow(type)} style={{ flex:1, padding:'6px 0', borderRadius:8, background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.25)', color:'#34d399', fontSize:12, cursor:'pointer' }}>Save</button>
+              <button onClick={() => { type === 'asset' ? setShowAddAsset(false) : setShowAddLiability(false); setNewBsDraft({ icon:'💰', name:'', value:'' }); }}
+                style={{ padding:'6px 12px', borderRadius:8, background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)', color:'#64748b', fontSize:12, cursor:'pointer' }}>Cancel</button>
+            </div>
           </div>
-          <div style={{ background: "rgba(248,113,113,0.04)", borderRadius: 14, border: "1px solid rgba(248,113,113,0.08)", padding: 14 }}>
-            <div style={{ fontSize: 10, color: "#f87171", textTransform: "uppercase", fontWeight: 700, marginBottom: 10 }}>Liabilities</div>
-            {[{ n: "Main mortgage", v: P.mainMortgage }, { n: "Top-up loan", v: P.topupLoan }].map((a, i) => (<div key={i} style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}><span style={{ fontSize: 11, color: "#94a3b8" }}>{a.n}</span><span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: "#f87171" }}>${a.v.toLocaleString()}</span></div>))}
-            <div style={{ borderTop: "1px solid rgba(248,113,113,0.1)", paddingTop: 6, display: "flex", justifyContent: "space-between" }}><span style={{ fontWeight: 700 }}>Total</span><span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, color: "#f87171" }}>{"$" + NW_DEBT.toLocaleString()}</span></div>
+        );
+
+        const now = new Date();
+        const thisMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const existingThisMonth = nwSnapshots.find(s => s.date.startsWith(thisMonthKey));
+        const lastSnapshot = nwSnapshots.length > 0 ? nwSnapshots[nwSnapshots.length - 1] : null;
+        const lastSnapshotLabel = lastSnapshot ? (() => {
+          const d = new Date(lastSnapshot.date);
+          return d.toLocaleString('en-AU', { month: 'short', year: 'numeric' });
+        })() : null;
+        const isSheetZero = netWorth === 0 && totalAssets === 0 && totalLiab === 0;
+
+        const doSaveSnapshot = () => {
+          const snap = {
+            id: thisMonthKey + '-' + Date.now(),
+            date: now.toISOString(),
+            netWorth,
+            totalAssets,
+            totalLiabilities: totalLiab,
+            breakdown: {
+              assets: displayAssets.map(a => ({ name: a.name, value: getAssetEff(a).value })),
+              liabilities: displayLiabs.map(l => ({ name: l.name, value: l.value })),
+            },
+          };
+          setNwSnapshots(prev => {
+            const filtered = prev.filter(s => !s.date.startsWith(thisMonthKey));
+            return [...filtered, snap];
+          });
+          setNwSnapshotConfirm(false);
+          setNwSnapshotMsg('✓ Snapshot saved — $' + netWorth.toLocaleString() + ' net worth');
+          setTimeout(() => setNwSnapshotMsg(null), 4000);
+        };
+
+        const handleSnapshotClick = () => {
+          if (isSheetZero) return;
+          if (existingThisMonth && !nwSnapshotConfirm) {
+            setNwSnapshotConfirm(true);
+          } else {
+            doSaveSnapshot();
+          }
+        };
+
+        return (<div>
+          {/* Snapshot button */}
+          <div style={{ marginBottom:12 }}>
+            {nwSnapshotMsg ? (
+              <div style={{ padding:'10px 14px', borderRadius:10, background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.25)', color:'#34d399', fontSize:13, fontWeight:600, textAlign:'center' }}>
+                {nwSnapshotMsg}
+              </div>
+            ) : nwSnapshotConfirm ? (
+              <div style={{ padding:'10px 14px', borderRadius:10, background:'rgba(251,191,36,0.08)', border:'1px solid rgba(251,191,36,0.2)', fontSize:12 }}>
+                <div style={{ color:'#fbbf24', fontWeight:600, marginBottom:8 }}>
+                  {`You already saved a snapshot for ${now.toLocaleString('en-AU', { month: 'long', year: 'numeric' })}. Replace it?`}
+                </div>
+                <div style={{ display:'flex', gap:6 }}>
+                  <button onClick={doSaveSnapshot} style={{ flex:1, padding:'7px 0', borderRadius:8, background:'rgba(99,102,241,0.15)', border:'1px solid rgba(99,102,241,0.35)', color:'#818cf8', fontSize:12, fontWeight:600, cursor:'pointer' }}>Replace</button>
+                  <button onClick={() => setNwSnapshotConfirm(false)} style={{ padding:'7px 12px', borderRadius:8, background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)', color:'#64748b', fontSize:12, cursor:'pointer' }}>Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <div title={isSheetZero ? 'Enter your asset and liability values first' : undefined}>
+                <button
+                  onClick={handleSnapshotClick}
+                  disabled={isSheetZero}
+                  style={{ width:'100%', padding:'10px 0', borderRadius:10, background: isSheetZero ? 'rgba(99,102,241,0.04)' : 'rgba(99,102,241,0.12)', border:`1px solid ${isSheetZero ? 'rgba(99,102,241,0.1)' : 'rgba(99,102,241,0.35)'}`, color: isSheetZero ? '#4b5563' : '#818cf8', fontSize:13, fontWeight:600, cursor: isSheetZero ? 'not-allowed' : 'pointer', transition:'all 0.15s' }}>
+                  📸 Save this month's snapshot
+                  {lastSnapshotLabel && !isSheetZero && <span style={{ fontWeight:400, fontSize:11, marginLeft:8, color:'#6366f1', opacity:0.8 }}>Last: {lastSnapshotLabel}</span>}
+                </button>
+              </div>
+            )}
           </div>
-        </div>
-        <div style={{ textAlign: "center", marginTop: 12, padding: 14, borderRadius: 12, background: "rgba(251,191,36,0.06)", border: "1px solid rgba(251,191,36,0.1)" }}><div style={{ fontSize: 10, color: "#fbbf24", textTransform: "uppercase", fontWeight: 700, marginBottom: 4 }}>Net Worth</div><div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 28, fontWeight: 800, color: "#fbbf24" }}>{"$" + NW_NOW.toLocaleString()}</div><div style={{ fontSize: 10, color: "#475569", marginTop: 3 }}>{`LVR ${((NW_DEBT / P.propertyValue) * 100).toFixed(1)}% · Property equity $${Math.round((P.propertyValue - NW_DEBT) / 1000)}k`}</div></div>
-        <Sec icon="📈">{`Shares ($${P.sharesPortfolioValue.toLocaleString()})`}</Sec>
-        <div style={{ background: "rgba(255,255,255,0.015)", borderRadius: 14, border: "1px solid rgba(255,255,255,0.045)", padding: 4 }}>
-          {shares.map((s, i) => (<div key={i} style={{ display: "grid", gridTemplateColumns: "40px 1fr 55px 55px", padding: "5px 10px", borderBottom: i < shares.length - 1 ? "1px solid rgba(255,255,255,0.025)" : "none" }}><span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fontWeight: 700, color: s.color }}>{s.code}</span><div style={{ height: 5, background: "rgba(255,255,255,0.03)", borderRadius: 3, overflow: "hidden", alignSelf: "center" }}><div style={{ width: `${s.pct}%`, height: "100%", background: s.color, opacity: 0.5, borderRadius: 3 }} /></div><span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: "#cbd5e1", textAlign: "right" }}>${s.value.toLocaleString()}</span><span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: s.pl >= 0 ? "#34d399" : "#f87171", textAlign: "right" }}>{s.pl >= 0 ? "+" : ""}${s.pl.toLocaleString()}</span></div>))}
-        </div>
-        <Note color="#fbbf24"><span style={{ color: "#fbbf24", fontWeight: 700 }}>VAS is the largest holding at 45%. </span>Diversified across 3 ETFs.</Note>
-      </div>)}
+
+          {/* ── Net Worth History Chart ── */}
+          {(() => {
+            if (nwSnapshots.length === 0) return (
+              <div style={{ marginBottom:12, padding:'12px 14px', borderRadius:10, background:'rgba(255,255,255,0.02)', border:'1px solid rgba(255,255,255,0.06)', color:'#64748b', fontSize:12, textAlign:'center', lineHeight:1.6 }}>
+                Save your first snapshot to start tracking your net worth over time.
+              </div>
+            );
+            if (nwSnapshots.length < 2) return (
+              <div style={{ marginBottom:12, padding:'12px 14px', borderRadius:10, background:'rgba(255,255,255,0.02)', border:'1px solid rgba(255,255,255,0.06)', color:'#64748b', fontSize:12, textAlign:'center', lineHeight:1.6 }}>
+                Your first chart will appear after your second snapshot.
+              </div>
+            );
+            const sorted = [...nwSnapshots].sort((a,b) => a.date.localeCompare(b.date));
+            const fmtLbl = d => { const x = new Date(d); return x.toLocaleString('en-AU',{month:'short',year:'2-digit'}); };
+            const n = sorted.length;
+            const baseData = sorted.map((s,i) => ({ label:fmtLbl(s.date), nw:s.netWorth, assets:s.totalAssets, liab:s.totalLiabilities, _snap:s, _i:i }));
+
+            // Linear regression
+            const xs = sorted.map((_,i)=>i), ys = sorted.map(s=>s.netWorth);
+            const sx=xs.reduce((a,b)=>a+b,0), sy=ys.reduce((a,b)=>a+b,0);
+            const sxy=xs.reduce((a,x,i)=>a+x*ys[i],0), sxx=xs.reduce((a,x)=>a+x*x,0);
+            const slope=(n*sxy-sx*sy)/(n*sxx-sx*sx||1);
+            const intercept=(sy-slope*sx)/n;
+
+            const projData = n >= 3 ? Array.from({length:6},(_,k) => {
+              const xi=n+k, d=new Date(sorted[n-1].date);
+              d.setMonth(d.getMonth()+k+1);
+              return { label:fmtLbl(d.toISOString()), projected:Math.round(intercept+slope*xi), nw:null, assets:null, liab:null };
+            }) : [];
+
+            const chartData = [
+              ...baseData.map(d => ({ ...d, ...(n>=3?{projected:Math.round(intercept+slope*d._i)}:{}) })),
+              ...projData,
+            ];
+
+            const latest=sorted[n-1], prev=sorted[n-2];
+            const change=latest.netWorth-prev.netWorth;
+            const avgChange=n>1?Math.round((sorted[n-1].netWorth-sorted[0].netWorth)/(n-1)):0;
+            const nwPos=latest.netWorth>=0;
+
+            return (
+              <div style={{ marginBottom:14 }}>
+                <div style={{ display:'flex', gap:8, marginBottom:10 }}>
+                  {[
+                    { label:'Current', val:'$'+latest.netWorth.toLocaleString(), color:'#fbbf24' },
+                    { label:'Change',  val:(change>=0?'+':'')+' $'+Math.abs(change).toLocaleString(), color:change>=0?'#34d399':'#f87171' },
+                    { label:'Trend',   val:(avgChange>=0?'+':'')+' $'+Math.abs(avgChange).toLocaleString()+'/mo', color:avgChange>=0?'#34d399':'#f87171' },
+                  ].map(s=>(
+                    <div key={s.label} style={{ flex:1, padding:'8px 10px', borderRadius:10, background:'rgba(255,255,255,0.025)', border:'1px solid rgba(255,255,255,0.06)', textAlign:'center' }}>
+                      <div style={{ fontSize:9, color:'#64748b', textTransform:'uppercase', fontWeight:700, marginBottom:3 }}>{s.label}</div>
+                      <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, fontWeight:700, color:s.color }}>{s.val}</div>
+                    </div>
+                  ))}
+                </div>
+                <Ch height={220}>
+                  <ComposedChart data={chartData} margin={{top:5,right:12,bottom:5,left:4}}
+                    onClick={e => { if(e?.activePayload?.[0]?.payload?._snap) setNwSelSnap(s => s===e.activePayload[0].payload._snap?null:e.activePayload[0].payload._snap); }}>
+                    {gd}
+                    <defs>
+                      <linearGradient id="nwGradPos" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%"  stopColor="#34d399" stopOpacity={0.25}/>
+                        <stop offset="95%" stopColor="#34d399" stopOpacity={0.02}/>
+                      </linearGradient>
+                      <linearGradient id="nwGradNeg" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%"  stopColor="#f87171" stopOpacity={0.25}/>
+                        <stop offset="95%" stopColor="#f87171" stopOpacity={0.02}/>
+                      </linearGradient>
+                    </defs>
+                    <XAxis dataKey="label" {...xP}/>
+                    <YAxis {...yP}/>
+                    <Tooltip content={<Tip/>}/>
+                    <Area dataKey="nw" name="Net Worth" stroke={nwPos?"#34d399":"#f87171"} fill={nwPos?"url(#nwGradPos)":"url(#nwGradNeg)"} strokeWidth={2} dot={{fill:nwPos?"#34d399":"#f87171",r:4,cursor:'pointer'}} connectNulls={false}/>
+                    <Line dataKey="assets" name="Assets"      stroke="#34d399" strokeWidth={1.5} strokeDasharray="4 3" dot={false} opacity={0.45} connectNulls={false}/>
+                    <Line dataKey="liab"   name="Liabilities" stroke="#f87171" strokeWidth={1.5} strokeDasharray="4 3" dot={false} opacity={0.45} connectNulls={false}/>
+                    {n>=3&&<Line dataKey="projected" name="Projected" stroke="#818cf8" strokeWidth={1.5} strokeDasharray="3 5" dot={false} opacity={0.4} connectNulls/>}
+                  </ComposedChart>
+                </Ch>
+                {nwSelSnap && (
+                  <div style={{ marginTop:8, padding:'10px 12px', borderRadius:10, background:'rgba(99,102,241,0.07)', border:'1px solid rgba(99,102,241,0.2)', fontSize:12 }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', marginBottom:6 }}>
+                      <span style={{ color:'#818cf8', fontWeight:700 }}>{fmtLbl(nwSelSnap.date)} Snapshot</span>
+                      <button onClick={()=>setNwSelSnap(null)} style={{ background:'none', border:'none', color:'#64748b', cursor:'pointer', fontSize:15, padding:0, lineHeight:1 }}>×</button>
+                    </div>
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6 }}>
+                      <div>
+                        <div style={{ fontSize:9, color:'#34d399', textTransform:'uppercase', fontWeight:700, marginBottom:4 }}>Assets</div>
+                        {nwSelSnap.breakdown.assets.map((a,i)=>(
+                          <div key={i} style={{ display:'flex', justifyContent:'space-between', color:'#94a3b8', fontSize:11, lineHeight:1.9 }}>
+                            <span>{a.name}</span><span style={{ fontFamily:"'JetBrains Mono',monospace" }}>${a.value.toLocaleString()}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div>
+                        <div style={{ fontSize:9, color:'#f87171', textTransform:'uppercase', fontWeight:700, marginBottom:4 }}>Liabilities</div>
+                        {nwSelSnap.breakdown.liabilities.map((l,i)=>(
+                          <div key={i} style={{ display:'flex', justifyContent:'space-between', color:'#94a3b8', fontSize:11, lineHeight:1.9 }}>
+                            <span>{l.name}</span><span style={{ fontFamily:"'JetBrains Mono',monospace" }}>${l.value.toLocaleString()}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div style={{ borderTop:'1px solid rgba(255,255,255,0.06)', marginTop:6, paddingTop:6, display:'flex', justifyContent:'space-between', fontWeight:700 }}>
+                      <span style={{ color:'#fbbf24' }}>Net Worth</span>
+                      <span style={{ fontFamily:"'JetBrains Mono',monospace", color:'#fbbf24' }}>${nwSelSnap.netWorth.toLocaleString()}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* ── Snapshot List ── */}
+          {nwSnapshots.length > 0 && (() => {
+            const fmtDate = d => { const x = new Date(d); return x.toLocaleString('en-AU', { month: 'short', year: 'numeric' }); };
+            const sorted = [...nwSnapshots].sort((a,b) => b.date.localeCompare(a.date));
+
+            const handleExport = () => {
+              const header = 'Date,Net Worth,Total Assets,Total Liabilities';
+              const rows = [...nwSnapshots]
+                .sort((a,b) => a.date.localeCompare(b.date))
+                .map(s => `${s.date.slice(0,10)},${s.netWorth},${s.totalAssets},${s.totalLiabilities}`);
+              navigator.clipboard.writeText([header, ...rows].join('\n'));
+              setNwSnapshotMsg('✓ History copied to clipboard');
+              setTimeout(() => setNwSnapshotMsg(null), 3000);
+            };
+
+            return (
+              <div style={{ marginBottom:14 }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+                  <div style={{ fontSize:10, color:'#64748b', textTransform:'uppercase', fontWeight:700, letterSpacing:'0.06em' }}>Snapshot History</div>
+                  <button onClick={handleExport} style={{ padding:'4px 10px', borderRadius:7, background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', color:'#64748b', fontSize:11, cursor:'pointer' }}>Export CSV</button>
+                </div>
+                <div style={{ borderRadius:10, border:'1px solid rgba(255,255,255,0.06)', overflow:'hidden' }}>
+                  {sorted.map((snap, idx) => {
+                    const prevSnap = sorted[idx + 1];
+                    const change = prevSnap ? snap.netWorth - prevSnap.netWorth : null;
+                    const isExpanded = nwExpandedSnaps.has(snap.id);
+                    const isPendingDelete = nwDeleteConfirm === snap.id;
+                    return (
+                      <div key={snap.id} style={{ borderBottom: idx < sorted.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
+                        <div style={{ display:'flex', alignItems:'center', padding:'9px 12px', gap:8 }}>
+                          <button
+                            onClick={() => setNwExpandedSnaps(prev => { const s = new Set(prev); s.has(snap.id) ? s.delete(snap.id) : s.add(snap.id); return s; })}
+                            style={{ background:'none', border:'none', color:'#64748b', cursor:'pointer', fontSize:10, padding:0, lineHeight:1, flexShrink:0, width:14, textAlign:'center' }}>
+                            {isExpanded ? '▼' : '▶'}
+                          </button>
+                          <span style={{ fontSize:12, color:'#94a3b8', minWidth:72 }}>{fmtDate(snap.date)}</span>
+                          <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, fontWeight:700, color:'#fbbf24', flex:1 }}>${snap.netWorth.toLocaleString()}</span>
+                          {change !== null && (
+                            <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:11, color: change >= 0 ? '#34d399' : '#f87171', minWidth:78, textAlign:'right' }}>
+                              {change >= 0 ? '+' : '−'}${Math.abs(change).toLocaleString()}
+                            </span>
+                          )}
+                          {isPendingDelete ? (
+                            <div style={{ display:'flex', gap:4, alignItems:'center', flexShrink:0, marginLeft:6 }}>
+                              <span style={{ fontSize:11, color:'#f87171' }}>Delete?</span>
+                              <button onClick={() => { setNwSnapshots(prev => prev.filter(s => s.id !== snap.id)); setNwDeleteConfirm(null); }} style={{ padding:'2px 7px', borderRadius:5, background:'rgba(248,113,113,0.15)', border:'1px solid rgba(248,113,113,0.3)', color:'#f87171', fontSize:11, cursor:'pointer', fontWeight:600 }}>Yes</button>
+                              <button onClick={() => setNwDeleteConfirm(null)} style={{ padding:'2px 7px', borderRadius:5, background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', color:'#64748b', fontSize:11, cursor:'pointer' }}>No</button>
+                            </div>
+                          ) : (
+                            <button onClick={() => setNwDeleteConfirm(snap.id)} style={{ background:'none', border:'none', color:'#475569', cursor:'pointer', fontSize:14, padding:'0 2px', lineHeight:1, flexShrink:0, marginLeft:4 }} title="Delete snapshot">✕</button>
+                          )}
+                        </div>
+                        {isExpanded && (
+                          <div style={{ padding:'8px 12px 10px 36px', background:'rgba(99,102,241,0.04)', borderTop:'1px solid rgba(255,255,255,0.04)' }}>
+                            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                              <div>
+                                <div style={{ fontSize:9, color:'#34d399', textTransform:'uppercase', fontWeight:700, marginBottom:4 }}>Assets</div>
+                                {snap.breakdown.assets.map((a,i) => (
+                                  <div key={i} style={{ display:'flex', justifyContent:'space-between', color:'#94a3b8', fontSize:11, lineHeight:1.9 }}>
+                                    <span>{a.name}</span><span style={{ fontFamily:"'JetBrains Mono',monospace" }}>${a.value.toLocaleString()}</span>
+                                  </div>
+                                ))}
+                                <div style={{ borderTop:'1px solid rgba(255,255,255,0.06)', marginTop:4, paddingTop:4, display:'flex', justifyContent:'space-between', fontSize:11, fontWeight:700, color:'#34d399' }}>
+                                  <span>Total</span><span style={{ fontFamily:"'JetBrains Mono',monospace" }}>${snap.totalAssets.toLocaleString()}</span>
+                                </div>
+                              </div>
+                              <div>
+                                <div style={{ fontSize:9, color:'#f87171', textTransform:'uppercase', fontWeight:700, marginBottom:4 }}>Liabilities</div>
+                                {snap.breakdown.liabilities.map((l,i) => (
+                                  <div key={i} style={{ display:'flex', justifyContent:'space-between', color:'#94a3b8', fontSize:11, lineHeight:1.9 }}>
+                                    <span>{l.name}</span><span style={{ fontFamily:"'JetBrains Mono',monospace" }}>${l.value.toLocaleString()}</span>
+                                  </div>
+                                ))}
+                                <div style={{ borderTop:'1px solid rgba(255,255,255,0.06)', marginTop:4, paddingTop:4, display:'flex', justifyContent:'space-between', fontSize:11, fontWeight:700, color:'#f87171' }}>
+                                  <span>Total</span><span style={{ fontFamily:"'JetBrains Mono',monospace" }}>${snap.totalLiabilities.toLocaleString()}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+            <St label="Assets"    value={"$" + totalAssets.toLocaleString()} accent="#34d399" />
+            <St label="Debt"      value={"$" + totalLiab.toLocaleString()}   accent="#f87171" />
+            <St label="Net Worth" value={"$" + netWorth.toLocaleString()}     accent="#fbbf24" />
+          </div>
+          {useDemoSheet && <Note color="#475569">Demo figures. Click any value to enter your own.</Note>}
+          <Sec icon="📊">Balance Sheet</Sec>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+            <div style={{ background:"rgba(52,211,153,0.04)", borderRadius:14, border:"1px solid rgba(52,211,153,0.08)", padding:14 }}>
+              <div style={{ fontSize:10, color:"#34d399", textTransform:"uppercase", fontWeight:700, marginBottom:10 }}>Assets</div>
+              {displayAssets.map(a => renderRow(a, 'asset', '#34d399'))}
+              <div style={{ borderTop:"1px solid rgba(52,211,153,0.1)", paddingTop:6, display:"flex", justifyContent:"space-between" }}><span style={{ fontWeight:700 }}>Total</span><span style={{ fontFamily:"'JetBrains Mono',monospace", fontWeight:700, color:"#34d399" }}>{"$" + totalAssets.toLocaleString()}</span></div>
+              {!useDemoSheet && (showAddAsset ? renderAddForm('asset') :
+                <button onClick={() => { setShowAddAsset(true); setShowAddLiability(false); setNewBsDraft({ icon:'💰', name:'', value:'' }); }}
+                  style={{ marginTop:8, width:'100%', padding:'5px 0', borderRadius:8, background:'rgba(52,211,153,0.06)', border:'1px solid rgba(52,211,153,0.12)', color:'#34d399', fontSize:11, cursor:'pointer' }}>+ Add asset</button>
+              )}
+            </div>
+            <div style={{ background:"rgba(248,113,113,0.04)", borderRadius:14, border:"1px solid rgba(248,113,113,0.08)", padding:14 }}>
+              <div style={{ fontSize:10, color:"#f87171", textTransform:"uppercase", fontWeight:700, marginBottom:10 }}>Liabilities</div>
+              {displayLiabs.map(l => renderRow(l, 'liability', '#f87171'))}
+              <div style={{ borderTop:"1px solid rgba(248,113,113,0.1)", paddingTop:6, display:"flex", justifyContent:"space-between" }}><span style={{ fontWeight:700 }}>Total</span><span style={{ fontFamily:"'JetBrains Mono',monospace", fontWeight:700, color:"#f87171" }}>{"$" + totalLiab.toLocaleString()}</span></div>
+              {!useDemoSheet && (showAddLiability ? renderAddForm('liability') :
+                <button onClick={() => { setShowAddLiability(true); setShowAddAsset(false); setNewBsDraft({ icon:'💳', name:'', value:'' }); }}
+                  style={{ marginTop:8, width:'100%', padding:'5px 0', borderRadius:8, background:'rgba(248,113,113,0.06)', border:'1px solid rgba(248,113,113,0.12)', color:'#f87171', fontSize:11, cursor:'pointer' }}>+ Add liability</button>
+              )}
+            </div>
+          </div>
+          <div style={{ textAlign:"center", marginTop:12, padding:14, borderRadius:12, background:"rgba(251,191,36,0.06)", border:"1px solid rgba(251,191,36,0.1)" }}>
+            <div style={{ fontSize:10, color:"#fbbf24", textTransform:"uppercase", fontWeight:700, marginBottom:4 }}>Net Worth</div>
+            <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:28, fontWeight:800, color:"#fbbf24" }}>{"$" + netWorth.toLocaleString()}</div>
+            {lvr && <div style={{ fontSize:10, color:"#475569", marginTop:3 }}>{`LVR ${lvr}% · Property equity $${Math.round((propVal - totalLiab) / 1000)}k`}</div>}
+          </div>
+          <Sec icon="📈">{`Shares ($${livePortfolioValue.toLocaleString()})`}</Sec>
+          <div style={{ background:"rgba(255,255,255,0.015)", borderRadius:14, border:"1px solid rgba(255,255,255,0.045)", padding:4 }}>
+            {shares.map((s, i) => (<div key={i} style={{ display:"grid", gridTemplateColumns:"40px 1fr 55px 55px", padding:"5px 10px", borderBottom: i < shares.length - 1 ? "1px solid rgba(255,255,255,0.025)" : "none" }}><span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:10, fontWeight:700, color:s.color }}>{s.code}</span><div style={{ height:5, background:"rgba(255,255,255,0.03)", borderRadius:3, overflow:"hidden", alignSelf:"center" }}><div style={{ width:`${s.pct}%`, height:"100%", background:s.color, opacity:0.5, borderRadius:3 }} /></div><span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:10, color:"#cbd5e1", textAlign:"right" }}>${s.value.toLocaleString()}</span><span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:10, color:s.pl >= 0 ? "#34d399" : "#f87171", textAlign:"right" }}>{s.pl >= 0 ? "+" : ""}${s.pl.toLocaleString()}</span></div>))}
+          </div>
+          <Note color="#fbbf24"><span style={{ color:"#fbbf24", fontWeight:700 }}>VAS is the largest holding at 45%. </span>Diversified across 3 ETFs.</Note>
+        </div>);
+      })()}
 
       {/* ═══ PROPERTY ═══ */}
+      {/* TODO: Allow manual input of property value, mortgage balance, and interest rate instead of using hardcoded demo profile values. */}
       {tab === "property" && (<div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><St label="Value" value={"$" + (P.propertyValue/1000).toFixed(0) + "k"} accent="#34d399" /><St label="Debt" value={"$" + Math.round(NW_DEBT/1000) + "k"} accent="#f87171" /><St label="Equity" value={"$" + Math.round((P.propertyValue-NW_DEBT)/1000) + "k"} accent="#fbbf24" /></div>
         <Sec icon="📊">Mortgage Balance</Sec>
@@ -1170,7 +2185,7 @@ function DashboardInner() {
       {tab === "insights" && (<div>
         <Sec icon="📅">Day of Week</Sec>
         <Ch height={160}><BarChart data={dow.map(d => ({ day: d.d, avg: d.avg }))} margin={{ top: 5, right: 12, bottom: 5, left: 4 }}>{gd}<XAxis dataKey="day" {...xP} /><YAxis {...yP} /><Tooltip content={<Tip />} /><Bar dataKey="avg" name="Avg/txn" radius={[4, 4, 0, 0]} barSize={24} opacity={0.7}>{dow.map((d, i) => <Cell key={i} fill={d.avg > 200 ? "#f87171" : d.avg > 150 ? "#fbbf24" : "#6366f1"} />)}</Bar></BarChart></Ch>
-        <Note color="#f87171"><span style={{ color: "#f87171", fontWeight: 700 }}>Sun ${DEMO_DATA.insightStats.sunAvg} & Mon ${DEMO_DATA.insightStats.monAvg}</span> — double midweek.</Note>
+        <Note color="#f87171"><span style={{ color: "#f87171", fontWeight: 700 }}>Sun ${liveSunAvg} & Mon ${liveMonAvg}</span> — highest spend days.</Note>
         <Sec icon="🎯">Budget vs Actual</Sec>
         <div style={{ background: "rgba(255,255,255,0.015)", borderRadius: 14, border: "1px solid rgba(255,255,255,0.045)", overflow: "hidden" }}>
           <div style={{ display: "grid", gridTemplateColumns: "40px repeat(8,1fr)", padding: "5px 8px", background: "rgba(255,255,255,0.02)" }}><div />{bva.map(d => (<div key={d.m} style={{ fontSize: 8, color: "#64748b", fontWeight: 600, textAlign: "center" }}>{d.m}</div>))}</div>
@@ -1202,7 +2217,19 @@ function DashboardInner() {
 
       {/* ═══ TREND ═══ */}
       {tab === "trend" && (<div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><St label="8-Mo Deficit" value={"-$" + DEMO_DATA.trendStats.deficit8mo.toLocaleString()} accent="#f87171" /><St label="Forward" value={"+" + "$" + DEMO_DATA.trendStats.forward} accent="#34d399" /></div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {upData ? (
+            <>
+              <St label="Period Net" value={(totalPnlNet>=0?"$":"-$") + Math.abs(totalPnlNet).toLocaleString()} accent={totalPnlNet>=0?"#34d399":"#f87171"} />
+              <St label="Recent Avg" value={(recentAvgNet>=0?"+$":"-$") + Math.abs(recentAvgNet).toLocaleString()} sub="/mo" accent={recentAvgNet>=0?"#34d399":"#f87171"} />
+            </>
+          ) : (
+            <>
+              <St label="8-Mo Deficit" value={"-$" + DEMO_DATA.trendStats.deficit8mo.toLocaleString()} accent="#f87171" />
+              <St label="Forward" value={"+" + "$" + DEMO_DATA.trendStats.forward} accent="#34d399" />
+            </>
+          )}
+        </div>
         <Sec icon="📉">Amazon + PayPal</Sec>
         <Ch height={190}><BarChart data={cd.map(d => ({ month: d.m, Amazon: d.a, PayPal: d.p }))}>{gd}<XAxis dataKey="month" {...xP} /><YAxis {...yP} /><Tooltip content={<Tip />} /><Bar dataKey="Amazon" stackId="a" fill="#f97316" barSize={24} /><Bar dataKey="PayPal" stackId="a" fill="#6366f1" radius={[3, 3, 0, 0]} barSize={24} /></BarChart></Ch>
         <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7 }}>
@@ -1216,6 +2243,7 @@ function DashboardInner() {
       </div>)}
 
       {/* ═══ SUBS ═══ */}
+      {/* TODO: Auto-detect subscriptions from uploaded transaction data using MERCHANT_MAP 'sub' patterns. Currently hardcoded. */}
       {tab === "subs" && (<div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><St label="Monthly" value={"$" + tSM.toFixed(0)} accent="#60a5fa" /><St label="Annual" value="~$62" sub="/mo" accent="#a78bfa" /></div>
         <Note color="#34d399"><span style={{ color: "#34d399", fontWeight: 700 }}>Cut: </span>Some subs cut. Saved $91/mo.</Note>
@@ -1227,6 +2255,225 @@ function DashboardInner() {
         <div style={{ background: "rgba(255,255,255,0.015)", borderRadius: 14, border: "1px solid rgba(255,255,255,0.045)", padding: 4 }}>
           {sa.map((s, i) => { const tc = s.t === "e" ? "#34d399" : s.t === "r" ? "#fbbf24" : s.t === "p" ? "#60a5fa" : "#94a3b8"; return (<div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "5px 10px", borderBottom: i < sa.length - 1 ? "1px solid rgba(255,255,255,0.025)" : "none" }}><div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 4, height: 4, borderRadius: "50%", background: tc }} /><span style={{ fontSize: 11, color: "#e2e8f0" }}>{s.n}</span><span style={{ fontSize: 9, color: "#475569" }}>— {s.f}</span></div><span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: "#cbd5e1" }}>${s.c}/yr</span></div>); })}
         </div>
+      </div>)}
+
+      {/* ═══ GOALS ═══ */}
+      {tab === "goals" && (<div>
+        {/* Stat cards */}
+        <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:16 }}>
+          <St label="Total Target"      value={'$'+goalTotalTarget.toLocaleString()} accent="#4f6ef7" />
+          <St label="Total Saved"       value={'$'+goalTotalSaved.toLocaleString()}  accent="#34d399" />
+          <St label="Planned Surplus"   value={(plan.surplus>=0?'$':'-$')+Math.abs(plan.surplus).toLocaleString()} accent={plan.surplus>=200?'#34d399':plan.surplus>=0?'#fbbf24':'#f87171'} />
+          {hasActualData && <St label="Actual Avg Savings" value={(actualAvgSavings>=0?'$':'-$')+Math.abs(actualAvgSavings).toLocaleString()} accent={actualAvgSavings>=200?'#34d399':actualAvgSavings>=0?'#fbbf24':'#f87171'} />}
+        </div>
+
+        {/* Projection chart */}
+        {goals.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 11, color:'#64748b', marginBottom: 6, textTransform:'uppercase', letterSpacing:'0.09em', fontWeight:600 }}>Savings Projection</div>
+            {plan.surplus <= 0 && !hasActualData ? (
+              <Note color="#f87171">Adjust your Planner to increase monthly surplus — projection unavailable</Note>
+            ) : (
+              <>
+                <Ch height={220}>
+                  <ComposedChart data={goalProjData.data}>
+                    <defs>
+                      {goals.map((g,i) => (
+                        <linearGradient key={g.id} id={`gp_${g.id}`} x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%"  stopColor={GOAL_COLORS[i % GOAL_COLORS.length]} stopOpacity={0.25}/>
+                          <stop offset="95%" stopColor={GOAL_COLORS[i % GOAL_COLORS.length]} stopOpacity={0}/>
+                        </linearGradient>
+                      ))}
+                    </defs>
+                    {gd}
+                    <XAxis dataKey="month" {...xP} interval="preserveStartEnd"/>
+                    <YAxis {...yP}/>
+                    <Tooltip content={<Tip/>}/>
+                    {/* Actual savings lines — solid Area (shown when uploaded data exists) */}
+                    {hasActualData && goalPerActual > 0 && goals.map((g,i) => (
+                      <Area key={`act_${g.id}`} type="monotone" dataKey={`${g.id}_act`} name={`${g.emoji} ${g.name} (actual)`}
+                        stroke={GOAL_COLORS[i % GOAL_COLORS.length]} fill={`url(#gp_${g.id})`}
+                        strokeWidth={2.5} dot={false} activeDot={{r:4}}/>
+                    ))}
+                    {/* Plan lines — dashed Line when actual data exists, Area otherwise */}
+                    {goals.map((g,i) => hasActualData && plan.surplus > 0 ? (
+                      <Line key={`plan_${g.id}`} type="monotone" dataKey={g.id} name={`${g.emoji} ${g.name} (plan)`}
+                        stroke={GOAL_COLORS[i % GOAL_COLORS.length]} strokeWidth={1.5} strokeDasharray="5 3"
+                        dot={false} activeDot={{r:3}}/>
+                    ) : !hasActualData && plan.surplus > 0 ? (
+                      <Area key={g.id} type="monotone" dataKey={g.id} name={`${g.emoji} ${g.name}`}
+                        stroke={GOAL_COLORS[i % GOAL_COLORS.length]} fill={`url(#gp_${g.id})`}
+                        strokeWidth={2} dot={false} activeDot={{r:4}}/>
+                    ) : null)}
+                    {goals.map((g,i) => (
+                      <ReferenceLine key={`ref_${g.id}`} y={g.targetAmount||0}
+                        stroke={GOAL_COLORS[i % GOAL_COLORS.length]} strokeDasharray="4 4" strokeOpacity={0.5}
+                        label={{value:`${g.emoji} ${(g.targetAmount||0).toLocaleString()}`,fill:GOAL_COLORS[i % GOAL_COLORS.length],fontSize:9,position:'insideTopRight'}}/>
+                    ))}
+                    {/* Plan crossing dots */}
+                    {plan.surplus > 0 && Object.entries(goalProjData.crossings).map(([gid, cross]) => {
+                      const i = goals.findIndex(g2 => g2.id === gid);
+                      if (i < 0) return null;
+                      return <ReferenceDot key={`dot_${gid}`} x={cross.month} y={goals[i].targetAmount||0}
+                        r={5} fill={GOAL_COLORS[i % GOAL_COLORS.length]} stroke="#111127" strokeWidth={2}
+                        label={{value:`✓ ${cross.label}${hasActualData?' (plan)':''}`,fill:GOAL_COLORS[i % GOAL_COLORS.length],fontSize:9,position:'top'}}/>;
+                    })}
+                    {/* Actual crossing dots */}
+                    {hasActualData && goalPerActual > 0 && Object.entries(goalProjData.actualCrossings).map(([gid, cross]) => {
+                      const i = goals.findIndex(g2 => g2.id === gid);
+                      if (i < 0) return null;
+                      return <ReferenceDot key={`actdot_${gid}`} x={cross.month} y={goals[i].targetAmount||0}
+                        r={5} fill={GOAL_COLORS[i % GOAL_COLORS.length]} stroke="#34d399" strokeWidth={2}
+                        label={{value:`✓ ${cross.label} (actual)`,fill:'#34d399',fontSize:9,position:'bottom'}}/>;
+                    })}
+                  </ComposedChart>
+                </Ch>
+                {hasActualData ? (
+                  <div style={{ display:'flex', justifyContent:'center', gap:16, padding:'5px 0', fontSize:11, color:'#64748b', flexWrap:'wrap' }}>
+                    <span style={{ display:'flex', alignItems:'center', gap:4 }}><span style={{ display:'inline-block', width:18, height:2, background:'#94a3b8', borderRadius:1 }}/>Based on your spending</span>
+                    <span style={{ display:'flex', alignItems:'center', gap:4 }}><span style={{ display:'inline-block', width:18, height:2, borderRadius:1, opacity:0.5, borderTop:'2px dashed #94a3b8' }}/>Based on your plan</span>
+                  </div>
+                ) : (
+                  <Lg items={goals.map((g,i) => [`${g.emoji} ${g.name}`, GOAL_COLORS[i % GOAL_COLORS.length]])}/>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Empty state */}
+        {goals.length===0 && !showGoalForm && (
+          <div style={{ textAlign:'center', padding:'40px 20px' }}>
+            <div style={{ fontSize:38, marginBottom:12, opacity:0.25 }}>🎯</div>
+            <div style={{ fontSize:15, fontWeight:600, color:'#94a3b8', marginBottom:6 }}>No goals yet</div>
+            <div style={{ fontSize:13, color:'#475569', marginBottom:24 }}>Set a savings target and track your progress</div>
+            <div style={{ display:'flex', gap:8, justifyContent:'center', flexWrap:'wrap' }}>
+              {GOAL_TEMPLATES.map(t=>(
+                <button key={t.name} onClick={()=>applyGoalTpl(t)}
+                  style={{ background:'rgba(79,110,247,0.08)', border:'1px solid rgba(79,110,247,0.2)', borderRadius:10, padding:'10px 16px', color:'#a5b4fc', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+                  {t.emoji} {t.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Goal cards */}
+        {goals.map(g=>{
+          const pct = g.targetAmount>0 ? Math.min(100,Math.round((g.savedSoFar/g.targetAmount)*100)) : 0;
+          const proj = goalProjDate(g);
+          const isDeleting = deletingGoalId===g.id;
+          return (
+            <div key={g.id} style={{ background:'rgba(255,255,255,0.02)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:14, padding:'14px 16px', marginBottom:10 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:10 }}>
+                <div style={{ fontSize:14, fontWeight:700, color:'#e2e8f0' }}>{g.emoji} {g.name}</div>
+                <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                  <button onClick={()=>openGoalEdit(g)} style={{ background:'none', border:'none', cursor:'pointer', color:'#64748b', fontSize:14, padding:'0 3px', lineHeight:1 }} title="Edit">✎</button>
+                  {isDeleting ? (
+                    <>
+                      <button onClick={()=>{deleteGoal(g.id);setDeletingGoalId(null);}} style={{ background:'rgba(248,113,113,0.12)', border:'1px solid rgba(248,113,113,0.25)', borderRadius:6, color:'#f87171', fontSize:11, fontWeight:600, cursor:'pointer', padding:'2px 8px' }}>Delete</button>
+                      <button onClick={()=>setDeletingGoalId(null)} style={{ background:'none', border:'none', color:'#64748b', fontSize:11, cursor:'pointer', padding:'2px 4px' }}>Cancel</button>
+                    </>
+                  ) : (
+                    <button onClick={()=>setDeletingGoalId(g.id)} style={{ background:'none', border:'none', cursor:'pointer', color:'#64748b', fontSize:14, padding:'0 3px', lineHeight:1 }} title="Delete">✕</button>
+                  )}
+                </div>
+              </div>
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
+                <div style={{ flex:1, height:8, borderRadius:4, background:'rgba(255,255,255,0.05)', overflow:'hidden' }}>
+                  <div style={{ width:`${pct}%`, height:'100%', borderRadius:4, background:'#4f6ef7', transition:'width 0.4s' }} />
+                </div>
+                <span style={{ fontSize:11, color:'#64748b', fontFamily:"'JetBrains Mono',monospace", minWidth:32, textAlign:'right' }}>{pct}%</span>
+              </div>
+              <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, color:'#64748b', marginBottom:4 }}>
+                <span>${(g.savedSoFar||0).toLocaleString()} saved of ${(g.targetAmount||0).toLocaleString()}</span>
+                <span>{pct}% complete</span>
+              </div>
+              <div style={{ fontSize:11, color:'#475569' }}>
+                {proj.startsWith('Plan:') ? proj : <>Projected: <span style={{ color:proj==='Complete'?'#34d399':proj.includes('Increase')?'#f87171':'#94a3b8' }}>{proj}</span></>}
+                {g.targetDate && <span style={{ marginLeft:8, color:'#334155' }}>· Target: {goalFmtDate(g.targetDate)}</span>}
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Quick-start templates (when goals exist) */}
+        {goals.length>0 && !showGoalForm && (
+          <div style={{ marginTop:8, marginBottom:10 }}>
+            <div style={{ fontSize:10, color:'#334155', marginBottom:6, textTransform:'uppercase', letterSpacing:'0.09em', fontWeight:600 }}>Quick-start templates</div>
+            <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+              {GOAL_TEMPLATES.map(t=>(
+                <button key={t.name} onClick={()=>applyGoalTpl(t)}
+                  style={{ background:'rgba(79,110,247,0.05)', border:'1px solid rgba(79,110,247,0.14)', borderRadius:8, padding:'5px 11px', color:'#818cf8', fontSize:12, fontWeight:500, cursor:'pointer' }}>
+                  {t.emoji} {t.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Add Goal button */}
+        {!showGoalForm && (
+          <button onClick={()=>{setEditingGoalId(null);setGoalDraft({emoji:'🎯',name:'',targetAmount:'',targetDate:'',savedSoFar:'0'});setShowGoalForm(true);}}
+            style={{ width:'100%', padding:'9px 0', borderRadius:10, background:'rgba(79,110,247,0.09)', border:'1px solid rgba(79,110,247,0.2)', color:'#818cf8', fontSize:13, fontWeight:600, cursor:'pointer', marginTop:4 }}>
+            + Add Goal
+          </button>
+        )}
+
+        {/* Add / Edit form */}
+        {showGoalForm && (
+          <div style={{ background:'rgba(255,255,255,0.02)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:14, padding:16, marginTop:8 }}>
+            <div style={{ fontSize:13, fontWeight:700, color:'#e2e8f0', marginBottom:12 }}>{editingGoalId ? 'Edit Goal' : 'New Goal'}</div>
+            {/* Emoji picker */}
+            <div style={{ marginBottom:10 }}>
+              <div style={{ fontSize:11, color:'#64748b', marginBottom:6 }}>Emoji</div>
+              <div style={{ display:'flex', gap:4, flexWrap:'wrap' }}>
+                {GOAL_EMOJIS.map(e=>(
+                  <button key={e} onClick={()=>setGoalDraft(d=>({...d,emoji:e}))}
+                    style={{ fontSize:18, padding:'4px 7px', borderRadius:8, cursor:'pointer', background:goalDraft.emoji===e?'rgba(79,110,247,0.2)':'rgba(255,255,255,0.04)', border:goalDraft.emoji===e?'1px solid rgba(79,110,247,0.4)':'1px solid rgba(255,255,255,0.06)' }}>
+                    {e}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Name */}
+            <div style={{ marginBottom:10 }}>
+              <div style={{ fontSize:11, color:'#64748b', marginBottom:4 }}>Name</div>
+              <input style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:8, padding:'7px 11px', color:'#e2e8f0', fontSize:13, width:'100%', boxSizing:'border-box', outline:'none' }}
+                placeholder="e.g. House Deposit" value={goalDraft.name} onChange={e=>setGoalDraft(d=>({...d,name:e.target.value}))} />
+            </div>
+            {/* Target + Saved */}
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:10 }}>
+              <div>
+                <div style={{ fontSize:11, color:'#64748b', marginBottom:4 }}>Target Amount</div>
+                <div style={{ position:'relative' }}>
+                  <span style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'#64748b', fontSize:13, pointerEvents:'none' }}>$</span>
+                  <input style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:8, padding:'7px 11px 7px 22px', color:'#e2e8f0', fontSize:13, width:'100%', boxSizing:'border-box', outline:'none' }}
+                    type="number" placeholder="60000" value={goalDraft.targetAmount} onChange={e=>setGoalDraft(d=>({...d,targetAmount:e.target.value}))} />
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize:11, color:'#64748b', marginBottom:4 }}>Saved So Far</div>
+                <div style={{ position:'relative' }}>
+                  <span style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'#64748b', fontSize:13, pointerEvents:'none' }}>$</span>
+                  <input style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:8, padding:'7px 11px 7px 22px', color:'#e2e8f0', fontSize:13, width:'100%', boxSizing:'border-box', outline:'none' }}
+                    type="number" placeholder="0" value={goalDraft.savedSoFar} onChange={e=>setGoalDraft(d=>({...d,savedSoFar:e.target.value}))} />
+                </div>
+              </div>
+            </div>
+            {/* Target date */}
+            <div style={{ marginBottom:14 }}>
+              <div style={{ fontSize:11, color:'#64748b', marginBottom:4 }}>Target Date</div>
+              <input style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:8, padding:'7px 11px', color:'#e2e8f0', fontSize:13, width:'100%', boxSizing:'border-box', outline:'none', colorScheme:'dark' }}
+                type="date" value={goalDraft.targetDate} onChange={e=>setGoalDraft(d=>({...d,targetDate:e.target.value}))} />
+            </div>
+            {/* Buttons */}
+            <div style={{ display:'flex', gap:8 }}>
+              <button onClick={saveGoalDraft} style={{ flex:1, padding:'8px 0', borderRadius:9, background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.25)', color:'#34d399', fontSize:13, fontWeight:600, cursor:'pointer' }}>Save Goal</button>
+              <button onClick={cancelGoalForm} style={{ padding:'8px 16px', borderRadius:9, background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', color:'#64748b', fontSize:13, cursor:'pointer' }}>Cancel</button>
+            </div>
+          </div>
+        )}
       </div>)}
 
       {/* ═══ TAX MODELLER ═══ */}
@@ -1378,15 +2625,15 @@ function DashboardInner() {
       </div>)}
 
       {/* ═══ HEATMAP ═══ */}
-      {tab === "heatmap" && (<div>
-        {!upData ? (
-          <div style={{ textAlign: "center", padding: "60px 20px", color: "#475569" }}>
-            <div style={{ fontSize: 32, marginBottom: 12 }}>📅</div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: "#64748b", marginBottom: 8 }}>No data yet</div>
-            <div style={{ fontSize: 13 }}>Connect your Up Bank CSV in the ⚙️ Settings tab to see your daily spending heatmap.</div>
-          </div>
-        ) : (() => {
-          const { minDate, maxDate } = upData.dateRange;
+      {tab === "heatmap" && (() => {
+        const hmRange = upData?.dateRange ?? (() => {
+          const keys = Object.keys(dailyTotals).sort();
+          if (!keys.length) return null;
+          return { minDate: new Date(keys[0] + 'T00:00:00'), maxDate: new Date(keys[keys.length - 1] + 'T00:00:00') };
+        })();
+        if (!hmRange) return (<div style={{ textAlign: "center", padding: "60px 20px", color: "#475569" }}><div style={{ fontSize: 32, marginBottom: 12 }}>📅</div><div style={{ fontSize: 13, color: "#64748b" }}>Upload your bank CSV in Settings to see your spending heatmap.</div></div>);
+        return (() => {
+        const { minDate, maxDate } = hmRange;
           // Build list of all days in range
           const days = [];
           const cur = new Date(minDate); cur.setHours(0,0,0,0);
@@ -1467,103 +2714,407 @@ function DashboardInner() {
               )}
             </div>
           </>);
+        })();
         })()}
-      </div>)}
 
       {/* ═══ SEARCH ═══ */}
-      {tab === "search" && (<div>
-        {!upData ? (
-          <div style={{ textAlign: "center", padding: "60px 20px", color: "#475569" }}>
-            <div style={{ fontSize: 32, marginBottom: 12 }}>🔍</div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: "#64748b", marginBottom: 8 }}>No data yet</div>
-            <div style={{ fontSize: 13 }}>Connect your Up Bank CSV in the ⚙️ Settings tab to search your transactions.</div>
-          </div>
-        ) : (<>
+      {tab === "search" && (() => {
+        const handleRecategorise = (tx, newCat, txKey) => {
+          const pattern = extractMerchantPattern(tx.desc);
+          setPendingRule({ txKey, tx, cat: newCat, editPattern: pattern });
+        };
+        const confirmPendingRule = () => {
+          if (!pendingRule) return;
+          const { tx, cat, editPattern } = pendingRule;
+          const count = transactions.filter(t => t.desc.toLowerCase().includes(editPattern.toLowerCase())).length;
+          addUserRule(editPattern, cat);
+          const isFirst = !firstRecatDone;
+          if (isFirst) {
+            setFirstRecatDone(true);
+            localStorage.setItem('comma_first_recat_done', 'true');
+          }
+          setCatConfirm({ pattern: editPattern, cat, count, isFirst });
+          setPendingRule(null);
+          setOpenCatPicker(null);
+        };
+        return (
+        <div onClick={() => { setOpenCatPicker(null); setPendingRule(null); }}>
+          {!upData && <div style={{ padding:"6px 10px", borderRadius:8, background:"rgba(96,165,250,0.04)", border:"1px solid rgba(96,165,250,0.08)", fontSize:11, color:"#475569", marginBottom:10 }}>Showing demo transactions — upload your CSV to search your own data</div>}
+
+          {/* Confirmation toast */}
+          {catConfirm && (
+            <div style={{ padding:"8px 12px", borderRadius:8, background:"rgba(52,211,153,0.08)", border:"1px solid rgba(52,211,153,0.2)", fontSize:12, color:"#34d399", marginBottom:10, display:"flex", alignItems:"center", gap:6 }}>
+              <span>✓</span>
+              {catConfirm.isFirst ? (
+                <span>Nice! Comma will now categorise all <strong>'{catConfirm.pattern}'</strong> transactions as <strong>{catConfirm.cat}</strong> — past and future. You can manage your rules in Settings.</span>
+              ) : (
+                <span>All <strong>'{catConfirm.pattern}'</strong> transactions → <strong>{catConfirm.cat}</strong>{catConfirm.count > 1 ? ` (${catConfirm.count} updated)` : ''}</span>
+              )}
+            </div>
+          )}
+
           <input
             type="text" placeholder="Search transactions…" value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
+            onClick={e => e.stopPropagation()}
             style={{ width: "100%", boxSizing: "border-box", padding: "11px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "#e2e8f0", fontSize: 14, fontFamily: "inherit", outline: "none", marginBottom: 10 }}
           />
+
+          {/* Filter pills */}
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
             {['all','amazon','paypal','restaurant','takeaway','grocery','health','transport','toll','sub'].map(cat => (
-              <button key={cat} onClick={() => setSearchCat(cat)}
+              <button key={cat} onClick={e => { e.stopPropagation(); setSearchCat(cat); }}
                 style={{ padding: "5px 12px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: "inherit",
                   background: searchCat === cat ? "rgba(96,165,250,0.2)" : "rgba(255,255,255,0.05)",
                   color: searchCat === cat ? "#93c5fd" : "#64748b" }}>
                 {cat === 'all' ? 'All' : cat.charAt(0).toUpperCase() + cat.slice(1)}
               </button>
             ))}
+            <button onClick={e => { e.stopPropagation(); setSearchCat(searchCat === 'other' ? 'all' : 'other'); }}
+              style={{ padding: "5px 12px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: "inherit",
+                background: searchCat === 'other' ? "rgba(248,113,113,0.2)" : "rgba(255,255,255,0.05)",
+                color: searchCat === 'other' ? "#f87171" : "#64748b" }}>
+              Uncategorised
+            </button>
           </div>
+
+          {/* Uncategorised helper hint */}
+          {searchCat === 'other' && filteredTxs.length > 0 && Object.keys(userRules).length < 3 && (
+            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8, padding: "6px 10px", borderRadius: 8, background: "rgba(248,113,113,0.04)", border: "1px solid rgba(248,113,113,0.08)" }}>
+              Tap any category pill below to teach Comma. It'll remember for all future transactions from the same merchant.
+            </div>
+          )}
+
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, fontSize: 12, color: "#475569" }}>
             <span>{filteredTxs.length} transactions</span>
             <span style={{ fontFamily: "'JetBrains Mono',monospace", color: "#f87171" }}>
               ${filteredTxs.reduce((s,t)=>s+t.amount,0).toLocaleString(undefined,{maximumFractionDigits:0})} total
             </span>
           </div>
+
           <div style={{ background: "rgba(255,255,255,0.015)", borderRadius: 14, border: "1px solid rgba(255,255,255,0.045)", overflow: "hidden", maxHeight: 520, overflowY: "auto" }}>
             {filteredTxs.length === 0 ? (
               <div style={{ padding: 24, textAlign: "center", color: "#475569", fontSize: 13 }}>No matching transactions</div>
-            ) : filteredTxs.map((tx, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.01)" }}>
-                <div style={{ fontSize: 11, color: "#475569", fontFamily: "'JetBrains Mono',monospace", flexShrink: 0, width: 82 }}>{tx.date}</div>
-                <div style={{ flex: 1, fontSize: 12, color: "#cbd5e1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tx.desc}</div>
-                <Badge text={tx.cat || "other"} color="#60a5fa" />
-                <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13, fontWeight: 700, color: "#f87171", flexShrink: 0 }}>${tx.amount.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
-              </div>
-            ))}
+            ) : filteredTxs.map((tx, i) => {
+              const txKey = tx.date + tx.desc + i;
+              const catColor = CAT_COLORS[tx.cat] || CAT_COLORS.other;
+              const isOpen = openCatPicker === txKey;
+              return (
+                <div key={i} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                  {/* Transaction row */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.01)" }}>
+                    <div style={{ fontSize: 11, color: "#475569", fontFamily: "'JetBrains Mono',monospace", flexShrink: 0, width: 82 }}>{tx.date}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, color: "#cbd5e1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tx.desc}</div>
+                      {tx.source && (
+                        <span style={{ fontSize: 9, color: tx.source === 'custom' ? '#34d399' : '#475569', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{tx.source}</span>
+                      )}
+                    </div>
+                    {/* Clickable category pill */}
+                    <button
+                      onClick={e => { e.stopPropagation(); setOpenCatPicker(isOpen ? null : txKey); }}
+                      title={tx.cat === 'other' || !tx.cat ? "Tap to categorise" : undefined}
+                      style={{ padding: "2px 8px", borderRadius: 20, border: `1px solid ${catColor}30`, cursor: "pointer", fontSize: 10, fontWeight: 700, fontFamily: "inherit", background: `${catColor}18`, color: catColor, flexShrink: 0, lineHeight: 1.6, transition: 'border-color 0.15s', outline: 'none' }}>
+                      {tx.cat || 'other'}
+                    </button>
+                    <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13, fontWeight: 700, color: "#f87171", flexShrink: 0 }}>${tx.amount.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
+                  </div>
+
+                  {/* Inline category picker */}
+                  {isOpen && (
+                    <div onClick={e => e.stopPropagation()} style={{ padding: "10px 14px 12px", background: "rgba(255,255,255,0.03)", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                      {pendingRule?.txKey === txKey ? (
+                        /* ── Confirm step: editable pattern + preview ── */
+                        (() => {
+                          const matchCount = transactions.filter(t =>
+                            t.desc.toLowerCase().includes(pendingRule.editPattern.toLowerCase())
+                          ).length;
+                          const catColor = CAT_COLORS[pendingRule.cat] || CAT_COLORS.other;
+                          return (
+                            <div>
+                              <div style={{ fontSize: 10, color: "#64748b", marginBottom: 6, fontWeight: 600, letterSpacing: "0.04em" }}>
+                                CONFIRM RULE
+                              </div>
+                              <input
+                                value={pendingRule.editPattern}
+                                onChange={e => setPendingRule(prev => ({ ...prev, editPattern: e.target.value }))}
+                                onClick={e => e.stopPropagation()}
+                                style={{ width: "100%", boxSizing: "border-box", padding: "7px 10px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.06)", color: "#e2e8f0", fontSize: 12, fontFamily: "'JetBrains Mono',monospace", outline: "none", marginBottom: 8 }}
+                              />
+                              <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 10 }}>
+                                This will categorise{" "}
+                                <span style={{ color: "#e2e8f0", fontWeight: 700 }}>{matchCount} transaction{matchCount !== 1 ? "s" : ""}</span>
+                                {" "}matching{" "}
+                                <span style={{ color: "#94a3b8", fontFamily: "'JetBrains Mono',monospace" }}>'{pendingRule.editPattern}'</span>
+                                {" "}as{" "}
+                                <span style={{ color: catColor, fontWeight: 700 }}>{pendingRule.cat}</span>.
+                              </div>
+                              <div style={{ display: "flex", gap: 6 }}>
+                                <button
+                                  onClick={confirmPendingRule}
+                                  disabled={!pendingRule.editPattern.trim()}
+                                  style={{ padding: "5px 14px", borderRadius: 8, border: "none", cursor: pendingRule.editPattern.trim() ? "pointer" : "not-allowed", fontSize: 11, fontWeight: 700, fontFamily: "inherit", background: "rgba(52,211,153,0.2)", color: "#34d399", opacity: pendingRule.editPattern.trim() ? 1 : 0.4 }}>
+                                  Confirm
+                                </button>
+                                <button
+                                  onClick={() => setPendingRule(null)}
+                                  style={{ padding: "5px 12px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: "inherit", background: "rgba(255,255,255,0.06)", color: "#64748b" }}>
+                                  Back
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })()
+                      ) : (
+                        /* ── Step 1: category picker ── */
+                        <>
+                          <div style={{ fontSize: 10, color: "#475569", marginBottom: 8, fontWeight: 600 }}>
+                            RECATEGORISE · pattern: <span style={{ color: '#94a3b8', fontFamily: "'JetBrains Mono',monospace" }}>{extractMerchantPattern(tx.desc)}</span>
+                          </div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                            {ALL_CATS.map(cat => {
+                              const c = CAT_COLORS[cat] || CAT_COLORS.other;
+                              const isCurrent = tx.cat === cat;
+                              return (
+                                <button key={cat} onClick={() => handleRecategorise(tx, cat, txKey)}
+                                  style={{ padding: "3px 10px", borderRadius: 20, border: `1px solid ${isCurrent ? c : 'transparent'}`, cursor: "pointer", fontSize: 10, fontWeight: 700, fontFamily: "inherit",
+                                    background: isCurrent ? `${c}25` : `${c}0d`, color: isCurrent ? c : `${c}aa`, transition: 'all 0.1s', outline: 'none' }}>
+                                  {cat}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
-        </>)}
-      </div>)}
+        </div>
+        );
+      })()}
 
       {/* ═══ SETTINGS ═══ */}
       {tab === "settings" && (<div>
-        <div style={{ marginBottom: 16, padding: "10px 14px", borderRadius: 10, background: "rgba(96,165,250,0.04)", border: "1px solid rgba(96,165,250,0.1)", fontSize: 12, color: "#94a3b8", lineHeight: 1.7 }}>
-          In Google Sheets: <strong style={{ color: "#e2e8f0" }}>File → Share → Publish to web → select tab → CSV format → Copy link</strong>
-        </div>
-        {[
-          { key: 'upbankUrl',      label: 'Up Bank',                  src: 'up', drives: 'Overview · Health · Variable · Insights · Deep Dive' },
-          { key: 'paypalUrl',      label: 'PayPal',                   src: 'pp', drives: 'PayPal tab' },
-          { key: 'gatewayMainUrl', label: 'Gateway Bank — Main Loan', src: 'gw', drives: 'Property tab' },
-          { key: 'gatewayTopUrl',  label: 'Gateway Bank — Top-Up',    src: 'gw', drives: 'Property tab' },
-          { key: 'commsecUrl',     label: 'CommSec',                  src: 'cs', drives: 'Net Worth tab' },
-        ].map(({ key, label, src, drives }) => {
-          const status = srcStatus[src];
-          const error  = srcError[src];
-          const data   = src === 'up' ? upData : src === 'pp' ? ppData : src === 'gw' ? gwData : csData;
-          const chip = !draftConfig[key]        ? { t: '⚪ Not configured', c: '#475569' }
-                     : status === 'loading'     ? { t: '⏳ Loading…',       c: '#fbbf24' }
-                     : status === 'loaded'      ? { t: `🟢 Loaded — ${data?.rowCount ?? '?'} rows`, c: '#34d399' }
-                     : status === 'error'       ? { t: `🔴 ${error}`,       c: '#f87171' }
-                     :                           { t: '⚪ Saved',            c: '#64748b' };
-          return (
-            <div key={key} style={{ marginBottom: 14, padding: 14, borderRadius: 12, background: "rgba(255,255,255,0.015)", border: "1px solid rgba(255,255,255,0.05)" }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: '#e2e8f0' }}>{label}</div>
-                  <div style={{ fontSize: 10, color: '#475569', marginTop: 2 }}>{drives}</div>
-                </div>
-                <span style={{ fontSize: 10, color: chip.c, fontWeight: 600, flexShrink: 0, marginLeft: 8 }}>{chip.t}</span>
-              </div>
-              <input
-                type="text"
-                value={draftConfig[key] || ''}
-                onChange={e => setDraftConfig(d => ({ ...d, [key]: e.target.value }))}
-                placeholder="https://docs.google.com/spreadsheets/d/…"
-                style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.04)', color: '#e2e8f0', fontSize: 11, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }}
-              />
-            </div>
-          );
-        })}
-        <button
-          onClick={() => { const cfg = { ...draftConfig }; localStorage.setItem('sheetConfig', JSON.stringify(cfg)); setSheetConfig(cfg); setSavedFlash(true); setTimeout(() => setSavedFlash(false), 2000); }}
-          style={{ width: '100%', padding: '11px 0', borderRadius: 10, border: 'none', cursor: 'pointer', background: savedFlash ? 'rgba(52,211,153,0.2)' : 'rgba(96,165,250,0.15)', color: savedFlash ? '#34d399' : '#93c5fd', fontSize: 13, fontWeight: 700, fontFamily: 'inherit', transition: 'background 0.2s, color 0.2s' }}
+
+        {/* Drop zone */}
+        <div
+          onDragOver={e => { e.preventDefault(); setDropActive(true); }}
+          onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDropActive(false); }}
+          onDrop={e => { e.preventDefault(); setDropActive(false); handleUploadedFiles(e.dataTransfer.files); }}
+          onClick={() => fileInputRef.current?.click()}
+          style={{
+            border: `2px dashed ${dropActive ? 'rgba(96,165,250,0.5)' : 'rgba(255,255,255,0.1)'}`,
+            borderRadius: 16,
+            padding: '48px 24px',
+            textAlign: 'center',
+            cursor: 'pointer',
+            background: dropActive ? 'rgba(96,165,250,0.04)' : 'rgba(255,255,255,0.01)',
+            transition: 'border-color 0.2s, background 0.2s',
+            marginBottom: 20,
+            userSelect: 'none',
+          }}
         >
-          {savedFlash ? '✓ Saved!' : 'Save & Reload'}
-        </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv"
+            multiple
+            style={{ display: 'none' }}
+            onChange={e => { handleUploadedFiles(e.target.files); e.target.value = ''; }}
+          />
+          <div style={{ fontSize: 36, marginBottom: 12, opacity: 0.25 }}>⬆</div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: '#e2e8f0', marginBottom: 6 }}>Drop your bank CSV files here</div>
+          <div style={{ fontSize: 12, color: '#475569' }}>or click to browse</div>
+          <div style={{ marginTop: 14, fontSize: 10, color: '#334155', lineHeight: 1.9 }}>
+            Up Bank · CommSec · PayPal · CBA · ANZ · NAB · Westpac · BankWest · Macquarie · St.George
+          </div>
+        </div>
+
+        {/* Per-file status chips */}
+        {uploadedFiles.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
+            {uploadedFiles.map(f => {
+              const isSuccess = f.status === 'success';
+              const isManual  = f.status === 'manual';
+              const accent    = isSuccess ? '#34d399' : isManual ? '#fbbf24' : '#f87171';
+              const icon      = isSuccess ? '✓' : isManual ? '⚠' : '✕';
+              const label     = isSuccess
+                ? `${f.bankLabel} — ${f.rowCount.toLocaleString()} ${f.dateRange ? 'transactions' : 'holdings'} loaded`
+                : isManual
+                  ? `${f.bankLabel} — unknown format, tap to map columns`
+                  : `Could not parse ${f.filename}`;
+              return (
+                <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, background: `${accent}08`, border: `1px solid ${accent}18`, cursor: isManual ? 'pointer' : 'default' }}
+                  onClick={isManual ? () => setMappingFileId(f.id) : undefined}
+                >
+                  <span style={{ color: accent, fontWeight: 700, fontSize: 13, flexShrink: 0 }}>{icon}</span>
+                  <span style={{ fontSize: 12, color: '#cbd5e1', flex: 1 }}>{label}</span>
+                  <button
+                    onClick={e => { e.stopPropagation(); setUploadedFiles(prev => prev.filter(x => x.id !== f.id)); }}
+                    style={{ background: 'none', border: 'none', color: '#475569', cursor: 'pointer', fontSize: 14, padding: '0 2px', lineHeight: 1 }}
+                    title="Remove"
+                  >✕</button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Loaded sources summary */}
+        {uploadedFiles.filter(f => f.status === 'success').length > 0 && (
+          <div style={{ marginBottom: 20, padding: '14px 16px', borderRadius: 12, background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div style={{ fontSize: 10, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700, marginBottom: 10 }}>Loaded data sources</div>
+            {uploadedFiles.filter(f => f.status === 'success').map((f, i, arr) => (
+              <div key={f.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: i < arr.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0' }}>{f.bankLabel}</div>
+                  <div style={{ fontSize: 11, color: '#475569', marginTop: 2 }}>
+                    {f.dateRange
+                      ? `${f.rowCount.toLocaleString()} transactions · ${f.dateRange.start} – ${f.dateRange.end}`
+                      : `${f.rowCount} holdings`}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setUploadedFiles(prev => prev.filter(x => x.id !== f.id))}
+                  style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 6, color: '#64748b', cursor: 'pointer', fontSize: 11, padding: '4px 10px', fontFamily: 'inherit' }}
+                >✕ Remove</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Demo mode notice */}
+        {uploadedFiles.filter(f => f.status === 'success').length === 0 && (
+          <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(96,165,250,0.04)', border: '1px solid rgba(96,165,250,0.08)', fontSize: 12, color: '#64748b', lineHeight: 1.7, marginBottom: 20 }}>
+            Showing demo data. Upload your own CSV files above to see your real figures.
+          </div>
+        )}
+
+        {/* Clear all data */}
+        {uploadedFiles.length > 0 && (
+          <button
+            onClick={() => {
+              if (confirmClear) { setUploadedFiles([]); setConfirmClear(false); }
+              else { setConfirmClear(true); setTimeout(() => setConfirmClear(false), 4000); }
+            }}
+            style={{ width: '100%', padding: '11px 0', borderRadius: 10, border: `1px solid ${confirmClear ? 'rgba(248,113,113,0.3)' : 'rgba(255,255,255,0.05)'}`, cursor: 'pointer', background: confirmClear ? 'rgba(248,113,113,0.1)' : 'rgba(255,255,255,0.02)', color: confirmClear ? '#f87171' : '#64748b', fontSize: 13, fontWeight: 700, fontFamily: 'inherit', transition: 'all 0.2s' }}
+          >
+            {confirmClear ? 'Tap again to confirm — this clears all data' : 'Clear all data'}
+          </button>
+        )}
+
+        {/* ── Custom Categories / User Rules ── */}
+        <div style={{ marginTop: 32 }}>
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginBottom: 4 }}>Custom Categories</div>
+            <div style={{ fontSize: 11, color: '#475569', lineHeight: 1.6 }}>Rules you've created to categorise merchants Comma doesn't recognise. These stay on your device.</div>
+          </div>
+
+          {/* Rule list */}
+          {Object.keys(userRules).length === 0 ? (
+            <div style={{ padding: '14px 16px', borderRadius: 10, background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.05)', fontSize: 12, color: '#475569', lineHeight: 1.7 }}>
+              No custom rules yet. Tap any transaction's category in the Search tab to create one.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
+              {Object.entries(userRules).map(([pattern, category]) => {
+                const catColor = CAT_COLORS[category] || CAT_COLORS.other;
+                const matchCount = transactions.filter(tx =>
+                  tx.desc.toLowerCase().includes(pattern.toLowerCase())
+                ).length;
+                return (
+                  <div key={pattern} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <span style={{ fontSize: 12, color: '#cbd5e1', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pattern}</span>
+                    <span style={{ fontSize: 12, color: '#475569', flexShrink: 0 }}>→</span>
+                    <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, fontWeight: 700, background: `${catColor}18`, color: catColor, flexShrink: 0 }}>{category}</span>
+                    {matchCount > 0 && (
+                      <span style={{ fontSize: 10, color: '#475569', flexShrink: 0 }}>{matchCount} tx</span>
+                    )}
+                    <button
+                      onClick={() => deleteUserRule(pattern)}
+                      style={{ background: 'none', border: 'none', color: '#475569', cursor: 'pointer', fontSize: 14, padding: '0 2px', lineHeight: 1, flexShrink: 0 }}
+                      title="Delete rule"
+                    >✕</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Export / Import buttons */}
+          <div style={{ display: 'flex', gap: 8, marginTop: Object.keys(userRules).length > 0 ? 0 : 12 }}>
+            <button
+              onClick={() => {
+                const json = JSON.stringify(userRules, null, 2);
+                navigator.clipboard.writeText(json).then(() => {
+                  setImportRulesStatus({ ok: true, msg: 'Rules copied to clipboard' });
+                  setTimeout(() => setImportRulesStatus(null), 3000);
+                });
+              }}
+              style={{ flex: 1, padding: '9px 0', borderRadius: 9, border: '1px solid rgba(255,255,255,0.07)', cursor: 'pointer', background: 'rgba(255,255,255,0.03)', color: '#94a3b8', fontSize: 12, fontWeight: 600, fontFamily: 'inherit' }}
+            >Export Rules</button>
+            <button
+              onClick={() => { setShowImportRules(v => !v); setImportRulesText(''); setImportRulesStatus(null); }}
+              style={{ flex: 1, padding: '9px 0', borderRadius: 9, border: '1px solid rgba(255,255,255,0.07)', cursor: 'pointer', background: 'rgba(255,255,255,0.03)', color: '#94a3b8', fontSize: 12, fontWeight: 600, fontFamily: 'inherit' }}
+            >Import Rules</button>
+          </div>
+
+          {/* Import panel */}
+          {showImportRules && (
+            <div style={{ marginTop: 10 }}>
+              <textarea
+                value={importRulesText}
+                onChange={e => setImportRulesText(e.target.value)}
+                placeholder={'Paste exported rules JSON here…\n{\n  "MERCHANT NAME": "category",\n  …\n}'}
+                rows={6}
+                style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 9, border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(0,0,0,0.2)', color: '#cbd5e1', fontSize: 12, fontFamily: 'inherit', resize: 'vertical', outline: 'none', lineHeight: 1.6 }}
+              />
+              <button
+                onClick={() => {
+                  try {
+                    const incoming = JSON.parse(importRulesText);
+                    if (typeof incoming !== 'object' || Array.isArray(incoming)) throw new Error('Expected a JSON object');
+                    const added = Object.entries(incoming).filter(([k]) => !(k in userRules)).length;
+                    setUserRules(prev => ({ ...incoming, ...prev })); // existing rules win on conflict
+                    setImportRulesStatus({ ok: true, msg: `Imported ${added} new rule${added !== 1 ? 's' : ''} (${Object.keys(incoming).length - added} skipped — already exist)` });
+                    setImportRulesText('');
+                    setShowImportRules(false);
+                  } catch (err) {
+                    setImportRulesStatus({ ok: false, msg: `Invalid JSON: ${err.message}` });
+                  }
+                }}
+                style={{ marginTop: 8, width: '100%', padding: '9px 0', borderRadius: 9, border: '1px solid rgba(96,165,250,0.25)', cursor: 'pointer', background: 'rgba(96,165,250,0.08)', color: '#60a5fa', fontSize: 12, fontWeight: 700, fontFamily: 'inherit' }}
+              >Apply Import</button>
+            </div>
+          )}
+
+          {/* Status feedback */}
+          {importRulesStatus && (
+            <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, background: importRulesStatus.ok ? 'rgba(52,211,153,0.08)' : 'rgba(248,113,113,0.08)', border: `1px solid ${importRulesStatus.ok ? 'rgba(52,211,153,0.2)' : 'rgba(248,113,113,0.2)'}`, fontSize: 12, color: importRulesStatus.ok ? '#34d399' : '#f87171' }}>
+              {importRulesStatus.msg}
+            </div>
+          )}
+        </div>
+
       </div>)}
 
       <div style={{ marginTop: 32, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.03)", textAlign: "center" }}><div style={{ color: "#1e293b", fontSize: 9 }}>Up Bank + PayPal + Gateway + CommSec</div></div>
       </div>{/* end main content */}
+
+      {/* ═══ COLUMN MAPPING MODAL ═══ */}
+      {mappingFileId && (() => {
+        const file = uploadedFiles.find(f => f.id === mappingFileId);
+        return file ? (
+          <ColumnMappingModal
+            file={file}
+            onClose={() => setMappingFileId(null)}
+            onSuccess={data => handleMappingSuccess(mappingFileId, data)}
+          />
+        ) : null;
+      })()}
     </div>
   );
 }
