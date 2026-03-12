@@ -72,6 +72,18 @@ function parseAmount(str) {
   return parseFloat(str.replace(/[$,\s]/g, '')) || 0;
 }
 
+export function sanitiseCSVField(value) {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (/^[=+\-@\t\r\n]/.test(trimmed)) return "'" + trimmed;
+  return trimmed;
+}
+
+export function sanitiseUserInput(text, maxLength = 100) {
+  if (typeof text !== 'string') return '';
+  return text.replace(/<[^>]*>/g, '').trim().slice(0, maxLength);
+}
+
 function getSortedMonths(dates) {
   if (dates.length === 0) return [];
   const minDate = new Date(Math.min(...dates.map(d => d.getTime())));
@@ -824,7 +836,7 @@ export function processUpBank(rows) {
     const date = parseDate(r[dateCol] || '');
     if (!date) return null;
     const amount = parseAmount(r[amtCol]);
-    const desc   = r[descCol] || '';
+    const desc   = sanitiseCSVField(r[descCol] || '');
     const upCat  = catCol ? (r[catCol] || '') : '';
 
     const isIncome = amount > 0;
@@ -865,7 +877,7 @@ export function processUniversalBank(rows, format) {
     if (!date) return null;
 
     // ── Description ─────────────────────────────────────────────────────────
-    const desc = columns.description ? (r[columns.description] || '').trim() : '';
+    const desc = columns.description ? sanitiseCSVField(r[columns.description] || '') : '';
 
     // ── Amount ──────────────────────────────────────────────────────────────
     let amount;
@@ -938,7 +950,7 @@ export function processPayPal(rows) {
   const withDates = payments.map(r => {
     const date = parseDate(r[dateCol] || '');
     if (!date) return null;
-    return { date, absAmt: Math.abs(parseAmount(r[grossCol])), name: r[nameCol] || '' };
+    return { date, absAmt: Math.abs(parseAmount(r[grossCol])), name: sanitiseCSVField(r[nameCol] || '') };
   }).filter(Boolean);
 
   if (withDates.length === 0) return null;

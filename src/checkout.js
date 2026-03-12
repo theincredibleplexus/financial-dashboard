@@ -1,9 +1,7 @@
 // ─── LEMON SQUEEZY CHECKOUT ──────────────────────────────────────────────────
-// Variant IDs are set in .env — fall back to 'PLACEHOLDER' so the build
-// doesn't break while IDs aren't configured yet.
 
-const LEMON_PRO_VARIANT_ID      = import.meta.env.VITE_LEMON_PRO_VARIANT      || 'PLACEHOLDER'
-const LEMON_LIFETIME_VARIANT_ID = import.meta.env.VITE_LEMON_LIFETIME_VARIANT || 'PLACEHOLDER'
+const LEMON_PRO_VARIANT_ID      = import.meta.env.VITE_LEMON_PRO_VARIANT
+const LEMON_LIFETIME_VARIANT_ID = import.meta.env.VITE_LEMON_LIFETIME_VARIANT
 
 export function getProCheckoutUrl(userId, userEmail) {
   const params = new URLSearchParams({

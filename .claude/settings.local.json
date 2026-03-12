@@ -10,7 +10,10 @@
       "Bash(node -e \":*)",
       "Bash(npm install:*)",
       "Bash(grep -E \"\\\\.\\(jsx|js|ts|tsx\\)$\")",
-      "Bash(sort -t: -k1 -n)"
+      "Bash(sort -t: -k1 -n)",
+      "Bash(npm uninstall:*)",
+      "Bash(npm audit:*)",
+      "Bash(npx npm-check-updates:*)"
     ]
   }
 }

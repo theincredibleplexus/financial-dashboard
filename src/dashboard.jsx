@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ComposedChart, Line, ReferenceLine, AreaChart, Area, Cell, LineChart, ReferenceDot } from "recharts";
-import { processCSVText, parseCSV, processUniversalBank, applyUserRules, aggregateTxs, extractMerchantPattern } from "./dataLoader.js";
+import { processCSVText, parseCSV, processUniversalBank, applyUserRules, aggregateTxs, extractMerchantPattern, sanitiseUserInput, sanitiseCSVField } from "./dataLoader.js";
 import { streamChat, buildFinancialContext } from "./aiProvider.js";
 import { getProCheckoutUrl, getLifetimeCheckoutUrl } from "./checkout.js";
 import { supabase, signUp as supaSignUp, signIn as supaSignIn, signOut as supaSignOut, getUser, onAuthStateChange, getVault, createVault, loadAllEncryptedData, saveEncryptedData, getUserTier } from "./supabase.js";
@@ -1432,8 +1432,29 @@ function WelcomeScreen({ onLaunchDemo, onUploadFiles }) {
   );
 }
 
+const VALID_TABS = new Set(tabGroups.flatMap(g => g.tabs.map(t => t.id)));
+
 function DashboardInner() {
-  const [tab, setTab] = useState("planner");
+  const initialTab = (() => {
+    const hash = window.location.hash.slice(1);
+    return VALID_TABS.has(hash) ? hash : "planner";
+  })();
+  const [tab, setTabState] = useState(initialTab);
+
+  const setTab = (tabId) => {
+    setTabState(tabId);
+    window.history.pushState({ tab: tabId }, '', '#' + tabId);
+  };
+
+  useEffect(() => {
+    const handlePopState = (event) => {
+      const t = event.state?.tab || window.location.hash.slice(1) || 'planner';
+      setTabState(VALID_TABS.has(t) ? t : 'planner');
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
   const tC = cc.reduce((s, c) => s + c.a, 0);
   const tSM = sm.reduce((s, c) => s + c.c, 0);
 
@@ -1725,6 +1746,60 @@ function DashboardInner() {
     { pattern: /\b(trend(?:s)?|month[- ]by[- ]month|monthly trend)\b/gi, tab: 'trend', label: null },
   ];
 
+  function renderChatLine(line, lineKey) {
+    const isBullet = /^[-*•]\s/.test(line);
+    const isNum    = /^\d+\.\s/.test(line);
+    const nodes = [];
+    let k = 0;
+    // Split line by **bold** and `code` markers
+    const TOKEN_RE = /(\*\*[^*]+\*\*|`[^`]+`)/g;
+    const segs = [];
+    let last = 0, m;
+    while ((m = TOKEN_RE.exec(line)) !== null) {
+      if (m.index > last) segs.push({ type: 'text', v: line.slice(last, m.index) });
+      const t = m[0];
+      segs.push(t.startsWith('**') ? { type: 'bold', v: t.slice(2, -2) } : { type: 'code', v: t.slice(1, -1) });
+      last = m.index + t.length;
+    }
+    if (last < line.length) segs.push({ type: 'text', v: line.slice(last) });
+    for (const seg of segs) {
+      if (seg.type === 'bold') {
+        nodes.push(<strong key={k++}>{seg.v}</strong>);
+      } else if (seg.type === 'code') {
+        nodes.push(<code key={k++} style={{ background: 'rgba(255,255,255,0.08)', padding: '1px 4px', borderRadius: 3, fontSize: 11 }}>{seg.v}</code>);
+      } else {
+        // Plain text: insert category nav buttons where patterns match
+        let rem = seg.v;
+        let guard = 0;
+        while (rem && guard++ < 200) {
+          let best = null, bestTab = null;
+          for (const { pattern, tab } of CHAT_CATEGORY_LINKS) {
+            const re = new RegExp(pattern.source, pattern.flags.replace('g', ''));
+            const hit = re.exec(rem);
+            if (hit && (!best || hit.index < best.index)) { best = hit; bestTab = tab; }
+          }
+          if (!best) { nodes.push(<span key={k++}>{rem}</span>); rem = ''; }
+          else {
+            if (best.index > 0) nodes.push(<span key={k++}>{rem.slice(0, best.index)}</span>);
+            const navTab = bestTab;
+            nodes.push(
+              <button key={k++} onClick={() => setTab(navTab)}
+                style={{ background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.25)', color: '#a5b4fc', borderRadius: 4, padding: '0 5px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', lineHeight: '1.6' }}>
+                {best[0]}
+              </button>
+            );
+            rem = rem.slice(best.index + best[0].length);
+          }
+        }
+      }
+    }
+    return (
+      <div key={lineKey} style={{ marginLeft: (isBullet || isNum) ? 8 : 0, paddingLeft: (isBullet || isNum) ? 8 : 0, borderLeft: (isBullet || isNum) ? '2px solid rgba(255,255,255,0.1)' : 'none', marginBottom: line === '' ? 6 : 2 }}>
+        {nodes.length > 0 ? nodes : '\u00A0'}
+      </div>
+    );
+  }
+
   function getFollowUpSuggestions(text) {
     const lower = text.toLowerCase();
     for (const rule of CHAT_FOLLOWUP_RULES) {
@@ -1735,8 +1810,6 @@ function DashboardInner() {
     return [];
   }
   useEffect(() => { chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMessages]);
-  // Expose tab navigation for inline category link buttons rendered via dangerouslySetInnerHTML
-  useEffect(() => { window.__chatNav = (t) => setTab(t); return () => { delete window.__chatNav; }; }, []);
   // Close chat panel on Escape
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') setChatOpen(false); };
@@ -1794,7 +1867,7 @@ function DashboardInner() {
   }
 
   async function sendChatMessage(inputText) {
-    const text = (inputText !== undefined ? inputText : chatInput).trim();
+    const text = (inputText !== undefined ? inputText : chatInput).trim().slice(0, 2000);
     if (!text || !aiKey) return;
 
     // Queue if already streaming
@@ -2565,7 +2638,7 @@ function DashboardInner() {
   }, [goals, plan.surplus, hasActualData, actualAvgSavings]);
   const openGoalEdit     = (g) => { setEditingGoalId(g.id); setGoalDraft({emoji:g.emoji,name:g.name,targetAmount:String(g.targetAmount),targetDate:g.targetDate||'',savedSoFar:String(g.savedSoFar||0)}); setShowGoalForm(true); };
   const applyGoalTpl     = (t) => { setEditingGoalId(null); setGoalDraft({emoji:t.emoji,name:t.name,targetAmount:String(t.targetAmount),targetDate:goalAddMonths(t.monthsOut),savedSoFar:'0'}); setShowGoalForm(true); };
-  const saveGoalDraft    = () => { const g={id:editingGoalId||('g'+Date.now()),emoji:goalDraft.emoji||'🎯',name:goalDraft.name||'Goal',targetAmount:parseFloat(goalDraft.targetAmount)||0,targetDate:goalDraft.targetDate,savedSoFar:parseFloat(goalDraft.savedSoFar)||0}; if(editingGoalId)updateGoal(editingGoalId,g);else addGoal(g); setShowGoalForm(false);setEditingGoalId(null); };
+  const saveGoalDraft    = () => { const g={id:editingGoalId||('g'+Date.now()),emoji:goalDraft.emoji||'🎯',name:sanitiseUserInput(goalDraft.name,100)||'Goal',targetAmount:parseFloat(goalDraft.targetAmount)||0,targetDate:goalDraft.targetDate,savedSoFar:parseFloat(goalDraft.savedSoFar)||0}; if(editingGoalId)updateGoal(editingGoalId,g);else addGoal(g); setShowGoalForm(false);setEditingGoalId(null); };
   const cancelGoalForm   = () => { setShowGoalForm(false); setEditingGoalId(null); };
 
   // ── Tier access helper ──────────────────────────────────────────────────────
@@ -2644,15 +2717,18 @@ function DashboardInner() {
               ) : (
                 <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 20, background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.2)", color: "#f59e0b", fontWeight: 700 }}>Demo</span>
               )}
-              {/* Auto-sync status indicator */}
+              {/* Sync status indicator */}
+              {!authUser && (
+                <span style={{ fontSize: 10, color: '#475569', cursor: 'default' }} title="Sign in to sync your data across devices">Local only</span>
+              )}
               {authUser && syncStatus === 'syncing' && (
-                <span style={{ fontSize: 9, color: '#818cf8' }}>Syncing…</span>
+                <span className="sync-syncing" style={{ fontSize: 10, color: '#f59e0b', cursor: 'default' }} title="Syncing…">Syncing…</span>
               )}
               {authUser && syncStatus === 'synced' && (
-                <span style={{ fontSize: 9, color: '#34d399' }}>✓ Synced</span>
+                <span style={{ fontSize: 10, color: '#34d399', cursor: 'pointer' }} title={lastSynced ? `Last synced ${new Date(lastSynced).toLocaleTimeString()}` : 'Synced'} onClick={handleSyncNow}>✓ Synced</span>
               )}
               {authUser && syncStatus === 'offline' && (
-                <span style={{ fontSize: 9, color: '#f59e0b', cursor: 'pointer' }} title="Offline — will retry" onClick={handleSyncNow}>⚠ Offline</span>
+                <span style={{ fontSize: 10, color: '#f87171', cursor: 'pointer' }} title="Sync failed — click to retry" onClick={handleSyncNow}>Offline</span>
               )}
             </div>
             <div style={{ color: "#475569", fontSize: 11 }}>{upData?.dateRange ? `${upData.dateRange.start} — ${upData.dateRange.end}` : "Sep '25 — Feb '26 · Demo"} · AUD</div>
@@ -2929,7 +3005,7 @@ function DashboardInner() {
         const cancelEdit = () => { setEditingBsCell(null); setEditingBsValue(''); };
         const saveNewRow = (type) => {
           const val = parseFloat(String(newBsDraft.value).replace(/[,$\s]/g, '')) || 0;
-          const row = { id: type + '_' + Date.now(), name: newBsDraft.name || (type === 'asset' ? 'Asset' : 'Liability'), value: val, icon: newBsDraft.icon };
+          const row = { id: type + '_' + Date.now(), name: sanitiseUserInput(newBsDraft.name, 100) || (type === 'asset' ? 'Asset' : 'Liability'), value: val, icon: newBsDraft.icon };
           if (type === 'asset') { setBsAssets(p => [...p, row]); setShowAddAsset(false); }
           else { setBsLiabilities(p => [...p, row]); setShowAddLiability(false); }
           setNewBsDraft({ icon: '💰', name: '', value: '' });
@@ -3198,7 +3274,7 @@ function DashboardInner() {
               const header = 'Date,Net Worth,Total Assets,Total Liabilities';
               const rows = [...nwSnapshots]
                 .sort((a,b) => a.date.localeCompare(b.date))
-                .map(s => `${s.date.slice(0,10)},${s.netWorth},${s.totalAssets},${s.totalLiabilities}`);
+                .map(s => `${sanitiseCSVField(s.date.slice(0,10))},${s.netWorth},${s.totalAssets},${s.totalLiabilities}`);
               navigator.clipboard.writeText([header, ...rows].join('\n'));
               setNwSnapshotMsg('✓ History copied to clipboard');
               setTimeout(() => setNwSnapshotMsg(null), 3000);
@@ -3584,7 +3660,7 @@ function DashboardInner() {
             <div style={{ display:'flex', gap:8, justifyContent:'center', flexWrap:'wrap' }}>
               {GOAL_TEMPLATES.map(t=>(
                 <button key={t.name} onClick={()=>applyGoalTpl(t)}
-                  style={{ background:'rgba(79,110,247,0.08)', border:'1px solid rgba(79,110,247,0.2)', borderRadius:10, padding:'10px 16px', color:'#a5b4fc', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+                  style={{ background:'rgba(79,110,247,0.08)', border:'1px solid rgba(79,110,247,0.2)', borderRadius:10, padding:'10px 16px', color:'#a5b4fc', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>
                   {t.emoji} {t.name}
                 </button>
               ))}
@@ -3642,7 +3718,7 @@ function DashboardInner() {
             <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
               {GOAL_TEMPLATES.map(t=>(
                 <button key={t.name} onClick={()=>applyGoalTpl(t)}
-                  style={{ background:'rgba(79,110,247,0.05)', border:'1px solid rgba(79,110,247,0.14)', borderRadius:8, padding:'5px 11px', color:'#818cf8', fontSize:12, fontWeight:500, cursor:'pointer' }}>
+                  style={{ background:'rgba(79,110,247,0.05)', border:'1px solid rgba(79,110,247,0.14)', borderRadius:8, padding:'5px 11px', color:'#818cf8', fontSize:12, fontWeight:500, cursor:'pointer', fontFamily:'inherit' }}>
                   {t.emoji} {t.name}
                 </button>
               ))}
@@ -3653,7 +3729,7 @@ function DashboardInner() {
         {/* Add Goal button */}
         {!showGoalForm && (
           <button onClick={()=>{setEditingGoalId(null);setGoalDraft({emoji:'🎯',name:'',targetAmount:'',targetDate:'',savedSoFar:'0'});setShowGoalForm(true);}}
-            style={{ width:'100%', padding:'9px 0', borderRadius:10, background:'rgba(79,110,247,0.09)', border:'1px solid rgba(79,110,247,0.2)', color:'#818cf8', fontSize:13, fontWeight:600, cursor:'pointer', marginTop:4 }}>
+            style={{ width:'100%', padding:'9px 0', borderRadius:10, background:'rgba(79,110,247,0.09)', border:'1px solid rgba(79,110,247,0.2)', color:'#818cf8', fontSize:13, fontWeight:600, cursor:'pointer', marginTop:4, fontFamily:'inherit' }}>
             + Add Goal
           </button>
         )}
@@ -3661,7 +3737,7 @@ function DashboardInner() {
         {/* Add / Edit form */}
         {showGoalForm && (
           <div style={{ background:'rgba(255,255,255,0.02)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:14, padding:16, marginTop:8 }}>
-            <div style={{ fontSize:13, fontWeight:700, color:'#e2e8f0', marginBottom:12 }}>{editingGoalId ? 'Edit Goal' : 'New Goal'}</div>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}><h2 style={{ margin:0, fontSize:14, fontWeight:700, color:'#e2e8f0' }}>{editingGoalId ? 'Edit Goal' : 'New Goal'}</h2><div style={{ flex:1, height:1, background:'linear-gradient(90deg,rgba(255,255,255,0.07),transparent)' }}/></div>
             {/* Emoji picker */}
             <div style={{ marginBottom:10 }}>
               <div style={{ fontSize:11, color:'#64748b', marginBottom:6 }}>Emoji</div>
@@ -3677,7 +3753,7 @@ function DashboardInner() {
             {/* Name */}
             <div style={{ marginBottom:10 }}>
               <div style={{ fontSize:11, color:'#64748b', marginBottom:4 }}>Name</div>
-              <input style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:8, padding:'7px 11px', color:'#e2e8f0', fontSize:13, width:'100%', boxSizing:'border-box', outline:'none' }}
+              <input style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:8, padding:'7px 11px', color:'#e2e8f0', fontSize:13, fontFamily:'inherit', width:'100%', boxSizing:'border-box', outline:'none' }}
                 placeholder="e.g. House Deposit" value={goalDraft.name} onChange={e=>setGoalDraft(d=>({...d,name:e.target.value}))} />
             </div>
             {/* Target + Saved */}
@@ -3686,7 +3762,7 @@ function DashboardInner() {
                 <div style={{ fontSize:11, color:'#64748b', marginBottom:4 }}>Target Amount</div>
                 <div style={{ position:'relative' }}>
                   <span style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'#64748b', fontSize:13, pointerEvents:'none' }}>$</span>
-                  <input style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:8, padding:'7px 11px 7px 22px', color:'#e2e8f0', fontSize:13, width:'100%', boxSizing:'border-box', outline:'none' }}
+                  <input style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:8, padding:'7px 11px 7px 22px', color:'#e2e8f0', fontSize:13, fontFamily:"'JetBrains Mono',monospace", width:'100%', boxSizing:'border-box', outline:'none' }}
                     type="number" placeholder="60000" value={goalDraft.targetAmount} onChange={e=>setGoalDraft(d=>({...d,targetAmount:e.target.value}))} />
                 </div>
               </div>
@@ -3694,7 +3770,7 @@ function DashboardInner() {
                 <div style={{ fontSize:11, color:'#64748b', marginBottom:4 }}>Saved So Far</div>
                 <div style={{ position:'relative' }}>
                   <span style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'#64748b', fontSize:13, pointerEvents:'none' }}>$</span>
-                  <input style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:8, padding:'7px 11px 7px 22px', color:'#e2e8f0', fontSize:13, width:'100%', boxSizing:'border-box', outline:'none' }}
+                  <input style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:8, padding:'7px 11px 7px 22px', color:'#e2e8f0', fontSize:13, fontFamily:"'JetBrains Mono',monospace", width:'100%', boxSizing:'border-box', outline:'none' }}
                     type="number" placeholder="0" value={goalDraft.savedSoFar} onChange={e=>setGoalDraft(d=>({...d,savedSoFar:e.target.value}))} />
                 </div>
               </div>
@@ -3702,13 +3778,13 @@ function DashboardInner() {
             {/* Target date */}
             <div style={{ marginBottom:14 }}>
               <div style={{ fontSize:11, color:'#64748b', marginBottom:4 }}>Target Date</div>
-              <input style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:8, padding:'7px 11px', color:'#e2e8f0', fontSize:13, width:'100%', boxSizing:'border-box', outline:'none', colorScheme:'dark' }}
+              <input style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:8, padding:'7px 11px', color:'#e2e8f0', fontSize:13, fontFamily:'inherit', width:'100%', boxSizing:'border-box', outline:'none', colorScheme:'dark' }}
                 type="date" value={goalDraft.targetDate} onChange={e=>setGoalDraft(d=>({...d,targetDate:e.target.value}))} />
             </div>
             {/* Buttons */}
             <div style={{ display:'flex', gap:8 }}>
-              <button onClick={saveGoalDraft} style={{ flex:1, padding:'8px 0', borderRadius:9, background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.25)', color:'#34d399', fontSize:13, fontWeight:600, cursor:'pointer' }}>Save Goal</button>
-              <button onClick={cancelGoalForm} style={{ padding:'8px 16px', borderRadius:9, background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', color:'#64748b', fontSize:13, cursor:'pointer' }}>Cancel</button>
+              <button onClick={saveGoalDraft} style={{ flex:1, padding:'8px 0', borderRadius:9, background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.25)', color:'#34d399', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>Save Goal</button>
+              <button onClick={cancelGoalForm} style={{ padding:'8px 16px', borderRadius:9, background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', color:'#64748b', fontSize:13, cursor:'pointer', fontFamily:'inherit' }}>Cancel</button>
             </div>
           </div>
         )}
@@ -3749,7 +3825,7 @@ function DashboardInner() {
             </div>
           ))}
         </div>
-        <Note color="#fbbf24"><span style={{ color: "#fbbf24", fontWeight: 700 }}>2024-25 rates (Stage 3). </span>Includes LITO offset. Assumes no deductions or super adjustments.</Note>
+        <Note color="#fbbf24"><span style={{ color: "#fbbf24", fontWeight: 700 }}>2024-25 rates (Stage 3). </span>Includes LITO offset. Assumes no deductions or super adjustments. This is an estimate only and does not constitute tax advice. Consult a registered tax agent.</Note>
       </div>)}
 
       {/* ═══ COMPARE ═══ */}
@@ -4022,7 +4098,7 @@ function DashboardInner() {
           {/* Uncategorised helper hint */}
           {searchCat === 'other' && filteredTxs.length > 0 && Object.keys(userRules).length < 3 && (
             <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8, padding: "6px 10px", borderRadius: 8, background: "rgba(248,113,113,0.04)", border: "1px solid rgba(248,113,113,0.08)" }}>
-              Tap any category pill below to teach Comma. It'll remember for all future transactions from the same merchant.
+              <strong style={{ color: "#f87171" }}>{filteredTxs.length}</strong> uncategorised transactions. Tap any category pill to teach Comma — it remembers for next time.
             </div>
           )}
 
@@ -4346,9 +4422,14 @@ function DashboardInner() {
                   try {
                     const incoming = JSON.parse(importRulesText);
                     if (typeof incoming !== 'object' || Array.isArray(incoming)) throw new Error('Expected a JSON object');
-                    const added = Object.entries(incoming).filter(([k]) => !(k in userRules)).length;
-                    setUserRules(prev => ({ ...incoming, ...prev })); // existing rules win on conflict
-                    setImportRulesStatus({ ok: true, msg: `Imported ${added} new rule${added !== 1 ? 's' : ''} (${Object.keys(incoming).length - added} skipped — already exist)` });
+                    const sanitised = Object.fromEntries(
+                      Object.entries(incoming)
+                        .filter(([k, v]) => typeof k === 'string' && typeof v === 'string')
+                        .map(([k, v]) => [sanitiseUserInput(k, 200), v])
+                    );
+                    const added = Object.entries(sanitised).filter(([k]) => !(k in userRules)).length;
+                    setUserRules(prev => ({ ...sanitised, ...prev })); // existing rules win on conflict
+                    setImportRulesStatus({ ok: true, msg: `Imported ${added} new rule${added !== 1 ? 's' : ''} (${Object.keys(sanitised).length - added} skipped — already exist)` });
                     setImportRulesText('');
                     setShowImportRules(false);
                   } catch (err) {
@@ -4444,6 +4525,13 @@ function DashboardInner() {
           </div>
         </div>
 
+        {/* Disclaimer */}
+        <div style={{ marginTop: 32, paddingTop: 20, borderTop: '1px solid rgba(255,255,255,0.05)', maxWidth: 600 }}>
+          <p style={{ margin: 0, fontSize: 11, color: '#5a6280', lineHeight: 1.7 }}>
+            Comma is a financial dashboard tool, not a licensed financial adviser. All information, calculations, and AI-generated insights are for personal informational use only and do not constitute financial, tax, or investment advice. Consult a qualified professional for decisions about your specific financial situation.
+          </p>
+        </div>
+
       </div>)}
 
       <div style={{ marginTop: 32, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.03)", textAlign: "center" }}><div style={{ color: "#1e293b", fontSize: 9 }}>Up Bank + PayPal + Gateway + CommSec</div></div>
@@ -4465,6 +4553,8 @@ function DashboardInner() {
       <style>{`
         @keyframes chatDot { 0%,80%,100%{opacity:0.2} 40%{opacity:1} }
         @keyframes fabPulse { 0%{box-shadow:0 4px 20px rgba(79,110,247,0.3)} 50%{box-shadow:0 4px 32px rgba(79,110,247,0.65),0 0 0 8px rgba(79,110,247,0.12)} 100%{box-shadow:0 4px 20px rgba(79,110,247,0.3)} }
+        @keyframes syncPulse { 0%,100%{opacity:1} 50%{opacity:0.45} }
+        .sync-syncing { animation: syncPulse 1.4s ease-in-out infinite; }
         .chat-fab { animation: fabPulse 2s ease-in-out 3; }
         .chat-fab:hover { transform: scale(1.08) !important; }
       `}</style>
@@ -4632,26 +4722,7 @@ function DashboardInner() {
                         fontSize: 12, color: msg.isError ? '#fca5a5' : '#e2e8f0', lineHeight: 1.75,
                       }}>
                         {msg.role === 'assistant' ? (<>
-                          {(() => {
-                            const parts = msg.text.split('\n');
-                            return parts.map((line, li) => {
-                              const isBullet = /^[-*•]\s/.test(line);
-                              const isNum = /^\d+\.\s/.test(line);
-                              let formatted = line
-                                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-                                .replace(/`(.+?)`/g, '<code style="background:rgba(255,255,255,0.08);padding:1px 4px;border-radius:3px;font-size:11px">$1</code>');
-                              CHAT_CATEGORY_LINKS.forEach(({ pattern, tab: targetTab }) => {
-                                formatted = formatted.replace(pattern, (match) =>
-                                  `<button onclick="window.__chatNav('${targetTab}')" style="background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.25);color:#a5b4fc;border-radius:4px;padding:0 5px;font-size:11px;cursor:pointer;font-family:inherit;line-height:1.6">${match}</button>`
-                                );
-                              });
-                              return (
-                                <div key={li} style={{ marginLeft: (isBullet || isNum) ? 8 : 0, paddingLeft: (isBullet || isNum) ? 8 : 0, borderLeft: (isBullet || isNum) ? '2px solid rgba(255,255,255,0.1)' : 'none', marginBottom: line === '' ? 6 : 2 }}
-                                  dangerouslySetInnerHTML={{ __html: formatted || '&nbsp;' }}
-                                />
-                              );
-                            });
-                          })()}
+                          {msg.text.split('\n').map((line, li) => renderChatLine(line, li))}
                           {msg.action && <button onClick={() => { setTab(msg.action.tab); setChatOpen(false); }} style={{ marginTop: 8, padding: '5px 10px', borderRadius: 7, background: 'rgba(248,113,113,0.15)', border: '1px solid rgba(248,113,113,0.25)', color: '#fca5a5', fontSize: 11, cursor: 'pointer', display: 'block' }}>{msg.action.label}</button>}
                         </>) : msg.text}
                       </div>
@@ -4684,6 +4755,7 @@ function DashboardInner() {
 
             {/* Input area */}
             <div style={{ padding: '8px 12px 12px', borderTop: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
+              <div style={{ textAlign: 'center', fontSize: 10, color: '#5a6280', marginBottom: 6 }}>AI responses are general only — not financial advice.</div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
                 <textarea
                   ref={chatInputRef}
@@ -4692,6 +4764,7 @@ function DashboardInner() {
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); } }}
                   disabled={chatStreaming}
                   placeholder="Ask about your finances…"
+                  maxLength={2000}
                   rows={1}
                   style={{
                     flex: 1, resize: 'none', maxHeight: 72, overflowY: 'auto',
