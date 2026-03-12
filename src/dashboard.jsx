@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ComposedChart, Line, ReferenceLine, AreaChart, Area, Cell, LineChart, ReferenceDot } from "recharts";
 import { processCSVText, parseCSV, processUniversalBank, applyUserRules, aggregateTxs, extractMerchantPattern } from "./dataLoader.js";
 import { streamChat, buildFinancialContext } from "./aiProvider.js";
+import { getProCheckoutUrl, getLifetimeCheckoutUrl } from "./checkout.js";
 import { supabase, signUp as supaSignUp, signIn as supaSignIn, signOut as supaSignOut, getUser, onAuthStateChange, getVault, createVault, loadAllEncryptedData, saveEncryptedData, getUserTier } from "./supabase.js";
 import { generateSalt, saltToBase64, base64ToSalt, encryptData, decryptData, deriveKey, encrypt, decrypt } from "./encryption.js";
 
@@ -516,6 +517,135 @@ const Lg=({items})=>(<div style={{display:"flex",justifyContent:"center",gap:11,
 const Note=({color,children})=>(<div style={{marginTop:7,padding:9,borderRadius:8,background:`${color}08`,border:`1px solid ${color}15`,fontSize:12,color:"#94a3b8",lineHeight:1.5}}>{children}</div>);
 const Row=({label,value,color,bold,note,borderTop})=>(<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:bold?"8px 0":"4px 0",borderTop:borderTop?"1px solid rgba(255,255,255,0.06)":"none",marginTop:borderTop?4:0}}><span style={{fontSize:13,color:bold?"#e2e8f0":"#94a3b8",fontWeight:bold?700:400}}>{label}{note&&<span style={{fontSize:10,color:"#475569",marginLeft:6}}>{note}</span>}</span><span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:bold?15:13,fontWeight:bold?700:600,color:color||"#cbd5e1"}}>{value}</span></div>);
 const Badge=({text,color})=>(<span style={{fontSize:9,padding:"2px 7px",borderRadius:20,fontWeight:700,background:`${color}15`,color,whiteSpace:"nowrap"}}>{text}</span>);
+
+// ─── PRO BADGE ────────────────────────────────────────────────────────────────
+const ProBadge = ({ feature, message, isSignedIn, onUpgrade, onSignIn }) => (
+  <div style={{ margin:'12px 0', padding:'20px 16px', borderRadius:14, background:'rgba(251,191,36,0.04)', border:'1px solid rgba(251,191,36,0.12)', textAlign:'center' }}>
+    <div style={{ fontSize:22, marginBottom:8 }}>✨</div>
+    <div style={{ fontSize:13, color:'#fbbf24', fontWeight:700, marginBottom:5 }}>{feature}</div>
+    <div style={{ fontSize:11, color:'#64748b', marginBottom:12, lineHeight:1.55 }}>
+      {message || 'Available on Pro — unlock with a subscription'}
+    </div>
+    {!isSignedIn && (
+      <div style={{ fontSize:11, color:'#94a3b8', marginBottom:10 }}>Create a free account first to purchase.</div>
+    )}
+    <button onClick={isSignedIn ? onUpgrade : onSignIn} style={{ padding:'7px 20px', borderRadius:8, background:'rgba(99,102,241,0.15)', border:'1px solid rgba(99,102,241,0.3)', color:'#818cf8', fontSize:12, fontWeight:600, cursor:'pointer' }}>
+      {isSignedIn ? 'Upgrade to Pro →' : 'Create account →'}
+    </button>
+    <div style={{ marginTop:10 }}>
+      <button onClick={onUpgrade} style={{ background:'none', border:'none', color:'#475569', fontSize:10, cursor:'pointer', textDecoration:'underline' }}>See all plans</button>
+    </div>
+  </div>
+);
+
+// ─── UPGRADE MODAL ────────────────────────────────────────────────────────────
+const UpgradeModal = ({ onClose, userTier, authUser }) => {
+  const signedIn = !!authUser;
+
+  const handleBuyPro = () => {
+    if (!signedIn) return;
+    window.open(getProCheckoutUrl(authUser.id, authUser.email), '_blank');
+  };
+
+  const handleBuyLifetime = () => {
+    if (!signedIn) return;
+    window.open(getLifetimeCheckoutUrl(authUser.id, authUser.email), '_blank');
+  };
+
+  const notSignedInNote = (
+    <div style={{ marginTop:8, fontSize:11, color:'#64748b', textAlign:'center' }}>
+      <span style={{ color:'#94a3b8' }}>Create a free account first to purchase.</span>
+    </div>
+  );
+
+  // Lifetime users have everything — no purchase buttons
+  if (userTier === 'lifetime') {
+    return (
+      <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.75)', zIndex:9999, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}
+        onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+        <div style={{ background:'#0f1123', border:'1px solid rgba(255,255,255,0.09)', borderRadius:20, padding:32, maxWidth:360, width:'100%', textAlign:'center' }}>
+          <div style={{ fontSize:38, marginBottom:10 }}>🎉</div>
+          <div style={{ fontSize:20, fontWeight:800, color:'#e2e8f0', marginBottom:8 }}>You're on Lifetime</div>
+          <div style={{ fontSize:13, color:'#64748b', lineHeight:1.65, marginBottom:24 }}>You have everything — thanks for your support!</div>
+          <button onClick={onClose} style={{ padding:'10px 20px', borderRadius:10, background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.07)', color:'#64748b', fontSize:12, cursor:'pointer' }}>
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Pro users — upsell to Lifetime
+  if (userTier === 'pro') {
+    return (
+      <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.75)', zIndex:9999, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}
+        onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+        <div style={{ background:'#0f1123', border:'1px solid rgba(255,255,255,0.09)', borderRadius:20, padding:32, maxWidth:360, width:'100%' }}>
+          <div style={{ textAlign:'center', marginBottom:24 }}>
+            <div style={{ fontSize:38, marginBottom:10 }}>⭐</div>
+            <div style={{ fontSize:20, fontWeight:800, color:'#e2e8f0', marginBottom:6 }}>You're already on Pro</div>
+            <div style={{ fontSize:12, color:'#64748b', lineHeight:1.65 }}>Upgrade to Lifetime for a one-time payment and never pay again.</div>
+          </div>
+          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+            <button
+              onClick={handleBuyLifetime}
+              disabled={!signedIn}
+              style={{ padding:'13px 14px', borderRadius:12, background: signedIn ? 'rgba(251,191,36,0.12)' : 'rgba(251,191,36,0.05)', border:'1px solid rgba(251,191,36,0.28)', color: signedIn ? '#fbbf24' : '#92400e', fontSize:13, fontWeight:700, cursor: signedIn ? 'pointer' : 'not-allowed', fontFamily:'inherit' }}
+            >
+              Buy Lifetime →
+            </button>
+            {!signedIn && notSignedInNote}
+            <button onClick={onClose} style={{ padding:'10px', borderRadius:10, background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.07)', color:'#64748b', fontSize:12, cursor:'pointer', fontFamily:'inherit' }}>
+              Maybe later
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Free users — show full upgrade pitch
+  return (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.75)', zIndex:9999, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ background:'#0f1123', border:'1px solid rgba(255,255,255,0.09)', borderRadius:20, padding:32, maxWidth:360, width:'100%' }}>
+        <div style={{ textAlign:'center', marginBottom:24 }}>
+          <div style={{ fontSize:38, marginBottom:10 }}>✨</div>
+          <div style={{ fontSize:20, fontWeight:800, color:'#e2e8f0', marginBottom:6 }}>Upgrade to Pro</div>
+          <div style={{ fontSize:12, color:'#64748b', lineHeight:1.65 }}>Unlock the full Comma experience with 12 months of history and AI-powered insights.</div>
+        </div>
+        <div style={{ display:'flex', flexDirection:'column', gap:1, marginBottom:20 }}>
+          {[
+            ['📅', '12 months of transaction history'],
+            ['📈', 'Net worth timeline & trend tracking'],
+            ['🎯', 'Goal projections & completion dates'],
+            ['🤖', 'AI financial chat assistant'],
+            ['📉', 'Advanced trend analysis'],
+            ['🔍', 'Full search & heatmap history'],
+          ].map(([icon, text]) => (
+            <div key={text} style={{ display:'flex', alignItems:'center', gap:12, padding:'9px 4px', borderBottom:'1px solid rgba(255,255,255,0.04)' }}>
+              <span style={{ fontSize:15, flexShrink:0 }}>{icon}</span>
+              <span style={{ fontSize:12, color:'#94a3b8' }}>{text}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+          <button
+            onClick={handleBuyPro}
+            disabled={!signedIn}
+            style={{ padding:'13px 14px', borderRadius:12, background: signedIn ? 'rgba(251,191,36,0.12)' : 'rgba(251,191,36,0.05)', border:'1px solid rgba(251,191,36,0.28)', color: signedIn ? '#fbbf24' : '#92400e', fontSize:13, fontWeight:700, cursor: signedIn ? 'pointer' : 'not-allowed', fontFamily:'inherit' }}
+          >
+            Buy Pro →
+          </button>
+          {!signedIn && notSignedInNote}
+          <button onClick={onClose} style={{ padding:'10px', borderRadius:10, background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.07)', color:'#64748b', fontSize:12, cursor:'pointer', fontFamily:'inherit' }}>
+            Maybe later
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const CAT_COLORS={grocery:'#34d399',restaurant:'#fb923c',takeaway:'#f97316',coffee:'#a78bfa',delivery:'#60a5fa',alcohol:'#f59e0b',transport:'#38bdf8',fuel:'#facc15',toll:'#94a3b8',parking:'#78716c',car:'#64748b',utilities:'#a8a29e',telco:'#6ee7b7',insurance:'#93c5fd',sub:'#c084fc',health:'#f472b6',fitness:'#86efac',personal_care:'#e879f9',education:'#67e8f9',school:'#22d3ee',childcare:'#f9a8d4',clothing:'#fca5a5',home:'#fde68a',kids:'#bef264',gifts:'#fb923c',bnpl:'#a3e635',charity:'#4ade80',strata:'#94a3b8',pets:'#bbf7d0',travel:'#7dd3fc',gambling:'#fb7185',government:'#94a3b8',cash:'#9ca3af',mortgage:'#94a3b8',rent:'#94a3b8',amazon:'#f97316',paypal:'#3b82f6',shopping:'#e879f9',personal:'#475569',other:'#475569',grocery_delivery:'#6ee7b7'};
 const ALL_CATS=['grocery','restaurant','takeaway','coffee','delivery','alcohol','transport','fuel','toll','parking','car','home','utilities','telco','insurance','health','fitness','personal_care','clothing','education','school','childcare','kids','sub','bnpl','gifts','charity','strata','travel','gambling','cash','government','mortgage','rent','transfer','other'];
@@ -1473,6 +1603,8 @@ function DashboardInner() {
   // ─── AUTH STATE ──────────────────────────────────────────────────────────
   const [authUser,          setAuthUser]          = useState(null);
   const [userTier,          setUserTier]          = useState('free');
+  const [upgradeOpen,       setUpgradeOpen]       = useState(false);
+  const [purchaseToast,     setPurchaseToast]     = useState(null); // { tier: 'pro'|'lifetime' } | null
   const [authView,          setAuthView]          = useState('none'); // 'none' | 'signup' | 'signin'
   const [authLoading,       setAuthLoading]       = useState(false);
   const [authError,         setAuthError]         = useState('');
@@ -1759,10 +1891,28 @@ function DashboardInner() {
   };
 
   // ─── LIVE DATA FROM UPLOADS ──────────────────────────────────────────────
-  const upData = useMemo(() =>
-    uploadedFiles.filter(f => f.type === 'bank' || f.type === 'upbank').at(-1)?.parsedData ?? null,
-    [uploadedFiles]
-  );
+  // Cutoff date based on tier: free = current month only, pro = 12 months, lifetime = all
+  const tierCutoff = useMemo(() => {
+    const now = new Date();
+    if (userTier === 'free') return new Date(now.getFullYear(), now.getMonth(), 1);
+    if (userTier === 'pro')  return new Date(now.getFullYear() - 1, now.getMonth(), 1);
+    return null;
+  }, [userTier]);
+
+  const upData = useMemo(() => {
+    const raw = uploadedFiles.filter(f => f.type === 'bank' || f.type === 'upbank').at(-1)?.parsedData ?? null;
+    if (!raw || !tierCutoff || !raw.rawTxs) return raw;
+    const filtered = raw.rawTxs.filter(tx => new Date(tx.date) >= tierCutoff);
+    if (filtered.length === raw.rawTxs.length) return raw;
+    return aggregateTxs(filtered);
+  }, [uploadedFiles, tierCutoff]);
+
+  // True when uploaded data has been trimmed by the tier cutoff
+  const historyLimitActive = useMemo(() => {
+    if (!tierCutoff) return false;
+    const raw = uploadedFiles.filter(f => f.type === 'bank' || f.type === 'upbank').at(-1)?.parsedData ?? null;
+    return !!(raw?.rawTxs?.some(tx => new Date(tx.date) < tierCutoff));
+  }, [uploadedFiles, tierCutoff]);
   const ppData = useMemo(() =>
     uploadedFiles.filter(f => f.type === 'paypal').at(-1)?.parsedData ?? null,
     [uploadedFiles]
@@ -1815,6 +1965,74 @@ function DashboardInner() {
     }).then(sub => { subscription = sub; });
     return () => subscription?.unsubscribe();
   }, []);
+
+  // ─── REALTIME TIER UPDATES ────────────────────────────────────────────────
+  // Instantly reflect tier changes (e.g. after purchase webhook) without polling.
+  // If a tier is revoked (refund), data beyond the free window becomes inaccessible
+  // but is never deleted — it reappears if the user re-upgrades.
+  useEffect(() => {
+    const userId = authUser?.id;
+    if (!userId) return;
+    const channel = supabase
+      .channel('tier-changes')
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'user_tier',
+        filter: `user_id=eq.${userId}`,
+      }, (payload) => {
+        const newTier = payload.new?.tier;
+        if (newTier) setUserTier(newTier);
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [authUser?.id]);
+
+  // ─── RETURN URL HANDLER ────────────────────────────────────────────────────
+  // Detects ?purchase=success&tier=pro|lifetime after Lemon Squeezy redirect.
+  // Shows a success toast, re-fetches tier, then polls every 3s (up to 30s) as
+  // a fallback in case the webhook takes a moment or the realtime sub drops.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const purchaseSuccess = params.get('purchase');
+    const purchasedTier   = params.get('tier');
+
+    if (purchaseSuccess !== 'success' || !['pro', 'lifetime'].includes(purchasedTier)) return;
+
+    // Clear params immediately so a refresh doesn't re-trigger
+    window.history.replaceState({}, '', window.location.pathname);
+
+    const userId = authUser?.id;
+
+    const applyTier = (tier) => {
+      setUserTier(tier);
+      setPurchaseToast({ tier });
+      setTimeout(() => setPurchaseToast(null), 6000);
+    };
+
+    // First fetch — webhook may already have fired
+    const poll = async () => {
+      if (!userId) return;
+      const current = await getUserTier(userId);
+      if (current === purchasedTier) { applyTier(current); return; }
+
+      // Show toast optimistically while we wait for webhook
+      applyTier(purchasedTier);
+
+      // Poll up to 10 times × 3s = 30s max
+      let attempts = 0;
+      const intervalId = setInterval(async () => {
+        attempts++;
+        const t = await getUserTier(userId);
+        if (t === purchasedTier || attempts >= 10) {
+          clearInterval(intervalId);
+          if (t === purchasedTier) setUserTier(t);
+        }
+      }, 3000);
+    };
+
+    poll();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── SYNC MANAGER ────────────────────────────────────────────────────────
 
@@ -2341,6 +2559,21 @@ function DashboardInner() {
   const saveGoalDraft    = () => { const g={id:editingGoalId||('g'+Date.now()),emoji:goalDraft.emoji||'🎯',name:goalDraft.name||'Goal',targetAmount:parseFloat(goalDraft.targetAmount)||0,targetDate:goalDraft.targetDate,savedSoFar:parseFloat(goalDraft.savedSoFar)||0}; if(editingGoalId)updateGoal(editingGoalId,g);else addGoal(g); setShowGoalForm(false);setEditingGoalId(null); };
   const cancelGoalForm   = () => { setShowGoalForm(false); setEditingGoalId(null); };
 
+  // ── Tier access helper ──────────────────────────────────────────────────────
+  const canAccess = (feature) => {
+    const access = {
+      history_12mo:      ['pro', 'lifetime'],
+      history_unlimited: ['lifetime'],
+      nw_timeline:       ['pro', 'lifetime'],
+      goal_projections:  ['pro', 'lifetime'],
+      ai_chat:           ['pro', 'lifetime'],
+      trend_tab:         ['pro', 'lifetime'],
+      deep_dive_history: ['pro', 'lifetime'],
+      household:         ['lifetime'],
+    };
+    return access[feature]?.includes(userTier) ?? false;
+  };
+
   const SidebarContent = ({ onSelect }) => (
     <>
       {tabGroups.map(group => (
@@ -2360,6 +2593,25 @@ function DashboardInner() {
     <div style={{ fontFamily: "'Instrument Sans',-apple-system,sans-serif", background: "#0b0b17", color: "#e2e8f0", minHeight: "100vh", display: "flex" }}>
       <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
       <style>{`input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#e2e8f0;cursor:pointer;border:2px solid #0b0b17;box-shadow:0 0 6px rgba(96,165,250,0.5)} input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#e2e8f0;cursor:pointer;border:2px solid #0b0b17}`}</style>
+
+      {/* Upgrade modal */}
+      {upgradeOpen && <UpgradeModal onClose={() => setUpgradeOpen(false)} userTier={userTier} authUser={authUser} />}
+
+      {/* Purchase success toast */}
+      {purchaseToast && (
+        <div style={{ position:'fixed', bottom:24, left:'50%', transform:'translateX(-50%)', zIndex:10000, background: purchaseToast.tier === 'lifetime' ? 'linear-gradient(135deg,#064e3b,#065f46)' : 'linear-gradient(135deg,#1e1b4b,#312e81)', border:`1px solid ${purchaseToast.tier === 'lifetime' ? 'rgba(52,211,153,0.4)' : 'rgba(129,140,248,0.4)'}`, borderRadius:16, padding:'16px 24px', display:'flex', alignItems:'center', gap:14, boxShadow:'0 8px 32px rgba(0,0,0,0.5)', maxWidth:340, width:'calc(100vw - 48px)' }}>
+          <div style={{ fontSize:28, flexShrink:0 }}>{purchaseToast.tier === 'lifetime' ? '🎉' : '✨'}</div>
+          <div>
+            <div style={{ fontSize:14, fontWeight:700, color:'#e2e8f0', marginBottom:3 }}>
+              {purchaseToast.tier === 'lifetime' ? 'Welcome to Comma Lifetime!' : 'Welcome to Comma Pro!'}
+            </div>
+            <div style={{ fontSize:11, color:'#94a3b8', lineHeight:1.5 }}>
+              {purchaseToast.tier === 'lifetime' ? 'All features unlocked forever — thanks for your support.' : '12 months of history and AI insights are now unlocked.'}
+            </div>
+          </div>
+          <button onClick={() => setPurchaseToast(null)} style={{ marginLeft:'auto', background:'none', border:'none', color:'#475569', fontSize:16, cursor:'pointer', flexShrink:0, padding:'0 4px' }}>×</button>
+        </div>
+      )}
 
       {/* Decrypt prompt — shown on page reload when session exists but key is not cached */}
       {showDecryptPrompt && (
@@ -2406,6 +2658,12 @@ function DashboardInner() {
               <div style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 8px", borderRadius:8, background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.06)" }}>
                 <div style={{ width:6, height:6, borderRadius:"50%", background:"#475569", flexShrink:0 }} />
                 <span style={{ fontSize:10, color:"#475569" }}>Demo data — upload CSV to use your own</span>
+              </div>
+            )}
+            {historyLimitActive && (
+              <div style={{ marginTop:5, display:"flex", alignItems:"center", justifyContent:"space-between", padding:"5px 8px", borderRadius:8, background:"rgba(251,191,36,0.06)", border:"1px solid rgba(251,191,36,0.18)" }}>
+                <span style={{ fontSize:10, color:"#92400e" }}>Current month only</span>
+                <button onClick={() => setUpgradeOpen(true)} style={{ background:"none", border:"none", color:"#fbbf24", fontSize:10, fontWeight:700, cursor:"pointer", padding:0 }}>Upgrade ↑</button>
               </div>
             )}
           </div>
@@ -2762,8 +3020,14 @@ function DashboardInner() {
           setTimeout(() => setNwSnapshotMsg(null), 4000);
         };
 
+        const snapshotLimit = userTier === 'free' ? 1 : userTier === 'pro' ? 12 : Infinity;
         const handleSnapshotClick = () => {
           if (isSheetZero) return;
+          // Free tier: block saving a 2nd snapshot
+          if (!canAccess('nw_timeline') && nwSnapshots.length >= snapshotLimit && !existingThisMonth) {
+            setUpgradeOpen(true);
+            return;
+          }
           if (existingThisMonth && !nwSnapshotConfirm) {
             setNwSnapshotConfirm(true);
           } else {
@@ -2807,6 +3071,10 @@ function DashboardInner() {
               <div style={{ marginBottom:12, padding:'12px 14px', borderRadius:10, background:'rgba(255,255,255,0.02)', border:'1px solid rgba(255,255,255,0.06)', color:'#64748b', fontSize:12, textAlign:'center', lineHeight:1.6 }}>
                 Save your first snapshot to start tracking your net worth over time.
               </div>
+            );
+            // Free tier: after 1st snapshot, gate the timeline
+            if (!canAccess('nw_timeline')) return (
+              <ProBadge feature="Net worth timeline & trend tracking" message="Upgrade to Pro to track your net worth over time" isSignedIn={!!authUser} onUpgrade={() => setUpgradeOpen(true)} onSignIn={() => { setTab('settings'); setAuthView('signup'); setAuthError(''); setAuthSuccess(''); setShowForgotPw(false); }} />
             );
             if (nwSnapshots.length < 2) return (
               <div style={{ marginBottom:12, padding:'12px 14px', borderRadius:10, background:'rgba(255,255,255,0.02)', border:'1px solid rgba(255,255,255,0.06)', color:'#64748b', fontSize:12, textAlign:'center', lineHeight:1.6 }}>
@@ -3145,33 +3413,56 @@ function DashboardInner() {
         </div>
         <Sec icon="🏆">Scorecard</Sec>
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>{scorecard.map((s, i) => (<div key={i} style={{ width: 68, padding: "7px 5px", borderRadius: 10, background: `${s.cl}08`, border: `1px solid ${s.cl}15`, textAlign: "center" }}><div style={{ fontSize: 8, color: "#64748b" }}>{s.m}</div><div style={{ fontSize: 24, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", color: s.cl, lineHeight: 1 }}>{s.g}</div></div>))}</div>
+        {!canAccess('deep_dive_history') && (
+          <ProBadge feature="Historical analysis — 6+ month velocity & compound cost" message="Upgrade to Pro for historical analysis" isSignedIn={!!authUser} onUpgrade={() => setUpgradeOpen(true)} onSignIn={() => { setTab('settings'); setAuthView('signup'); setAuthError(''); setAuthSuccess(''); setShowForgotPw(false); }} />
+        )}
       </div>)}
 
       {/* ═══ TREND ═══ */}
       {tab === "trend" && (<div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {upData ? (
-            <>
-              <St label="Period Net" value={(totalPnlNet>=0?"$":"-$") + Math.abs(totalPnlNet).toLocaleString()} accent={totalPnlNet>=0?"#34d399":"#f87171"} />
-              <St label="Recent Avg" value={(recentAvgNet>=0?"+$":"-$") + Math.abs(recentAvgNet).toLocaleString()} sub="/mo" accent={recentAvgNet>=0?"#34d399":"#f87171"} />
-            </>
-          ) : (
-            <>
-              <St label="8-Mo Deficit" value={"-$" + DEMO_DATA.trendStats.deficit8mo.toLocaleString()} accent="#f87171" />
-              <St label="Forward" value={"+" + "$" + DEMO_DATA.trendStats.forward} accent="#34d399" />
-            </>
-          )}
-        </div>
-        <Sec icon="📉">Amazon + PayPal</Sec>
-        <Ch height={190}><BarChart data={cd.map(d => ({ month: d.m, Amazon: d.a, PayPal: d.p }))}>{gd}<XAxis dataKey="month" {...xP} /><YAxis {...yP} /><Tooltip content={<Tip />} /><Bar dataKey="Amazon" stackId="a" fill="#f97316" barSize={24} /><Bar dataKey="PayPal" stackId="a" fill="#6366f1" radius={[3, 3, 0, 0]} barSize={24} /></BarChart></Ch>
-        <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7 }}>
-          <div style={{ padding: 12, borderRadius: 10, background: "rgba(248,113,113,0.04)", border: "1px solid rgba(248,113,113,0.08)" }}><div style={{ fontSize: 9, color: "#f87171", textTransform: "uppercase", fontWeight: 700 }}>Jul—Dec</div><div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 18, fontWeight: 700, color: "#f87171" }}>{"$" + DEMO_DATA.trendStats.julDec.toLocaleString()}</div></div>
-          <div style={{ padding: 12, borderRadius: 10, background: "rgba(52,211,153,0.04)", border: "1px solid rgba(52,211,153,0.08)" }}><div style={{ fontSize: 9, color: "#34d399", textTransform: "uppercase", fontWeight: 700 }}>Jan—Feb</div><div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 18, fontWeight: 700, color: "#34d399" }}>{"$" + DEMO_DATA.trendStats.janFeb}</div></div>
-        </div>
-        <Sec icon="✅">Actioned</Sec>
-        <div style={{ display: "grid", gap: 3 }}>
-          {DEMO_DATA.actioned.map((w, i) => (<div key={i} style={{ padding: "5px 10px", borderRadius: 7, background: "rgba(52,211,153,0.04)", border: "1px solid rgba(52,211,153,0.08)", display: "flex", justifyContent: "space-between" }}><span style={{ fontSize: 10, color: "#cbd5e1" }}>{w.a}</span><span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fontWeight: 700, color: "#34d399" }}>{w.s}/mo</span></div>))}
-        </div>
+        {!canAccess('trend_tab') ? (
+          <div style={{ position:'relative' }}>
+            <div style={{ filter:'blur(3px)', pointerEvents:'none', userSelect:'none', opacity:0.35 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <St label="8-Mo Deficit" value={"-$" + DEMO_DATA.trendStats.deficit8mo.toLocaleString()} accent="#f87171" />
+                <St label="Forward" value={"+" + "$" + DEMO_DATA.trendStats.forward} accent="#34d399" />
+              </div>
+              <Sec icon="📉">Amazon + PayPal</Sec>
+              <Ch height={190}><BarChart data={cd.map(d => ({ month: d.m, Amazon: d.a, PayPal: d.p }))}>{gd}<XAxis dataKey="month" {...xP} /><YAxis {...yP} /><Tooltip content={<Tip />} /><Bar dataKey="Amazon" stackId="a" fill="#f97316" barSize={24} /><Bar dataKey="PayPal" stackId="a" fill="#6366f1" radius={[3, 3, 0, 0]} barSize={24} /></BarChart></Ch>
+              <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7 }}>
+                <div style={{ padding: 12, borderRadius: 10, background: "rgba(248,113,113,0.04)", border: "1px solid rgba(248,113,113,0.08)" }}><div style={{ fontSize: 9, color: "#f87171", textTransform: "uppercase", fontWeight: 700 }}>Jul—Dec</div><div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 18, fontWeight: 700, color: "#f87171" }}>{"$" + DEMO_DATA.trendStats.julDec.toLocaleString()}</div></div>
+                <div style={{ padding: 12, borderRadius: 10, background: "rgba(52,211,153,0.04)", border: "1px solid rgba(52,211,153,0.08)" }}><div style={{ fontSize: 9, color: "#34d399", textTransform: "uppercase", fontWeight: 700 }}>Jan—Feb</div><div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 18, fontWeight: 700, color: "#34d399" }}>{"$" + DEMO_DATA.trendStats.janFeb}</div></div>
+              </div>
+            </div>
+            <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'0 16px' }}>
+              <ProBadge feature="Trend analysis — multi-month spending patterns" message="Upgrade to Pro for month-over-month spending analysis" isSignedIn={!!authUser} onUpgrade={() => setUpgradeOpen(true)} onSignIn={() => { setTab('settings'); setAuthView('signup'); setAuthError(''); setAuthSuccess(''); setShowForgotPw(false); }} />
+            </div>
+          </div>
+        ) : (<>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {upData ? (
+              <>
+                <St label="Period Net" value={(totalPnlNet>=0?"$":"-$") + Math.abs(totalPnlNet).toLocaleString()} accent={totalPnlNet>=0?"#34d399":"#f87171"} />
+                <St label="Recent Avg" value={(recentAvgNet>=0?"+$":"-$") + Math.abs(recentAvgNet).toLocaleString()} sub="/mo" accent={recentAvgNet>=0?"#34d399":"#f87171"} />
+              </>
+            ) : (
+              <>
+                <St label="8-Mo Deficit" value={"-$" + DEMO_DATA.trendStats.deficit8mo.toLocaleString()} accent="#f87171" />
+                <St label="Forward" value={"+" + "$" + DEMO_DATA.trendStats.forward} accent="#34d399" />
+              </>
+            )}
+          </div>
+          <Sec icon="📉">Amazon + PayPal</Sec>
+          <Ch height={190}><BarChart data={cd.map(d => ({ month: d.m, Amazon: d.a, PayPal: d.p }))}>{gd}<XAxis dataKey="month" {...xP} /><YAxis {...yP} /><Tooltip content={<Tip />} /><Bar dataKey="Amazon" stackId="a" fill="#f97316" barSize={24} /><Bar dataKey="PayPal" stackId="a" fill="#6366f1" radius={[3, 3, 0, 0]} barSize={24} /></BarChart></Ch>
+          <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7 }}>
+            <div style={{ padding: 12, borderRadius: 10, background: "rgba(248,113,113,0.04)", border: "1px solid rgba(248,113,113,0.08)" }}><div style={{ fontSize: 9, color: "#f87171", textTransform: "uppercase", fontWeight: 700 }}>Jul—Dec</div><div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 18, fontWeight: 700, color: "#f87171" }}>{"$" + DEMO_DATA.trendStats.julDec.toLocaleString()}</div></div>
+            <div style={{ padding: 12, borderRadius: 10, background: "rgba(52,211,153,0.04)", border: "1px solid rgba(52,211,153,0.08)" }}><div style={{ fontSize: 9, color: "#34d399", textTransform: "uppercase", fontWeight: 700 }}>Jan—Feb</div><div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 18, fontWeight: 700, color: "#34d399" }}>{"$" + DEMO_DATA.trendStats.janFeb}</div></div>
+          </div>
+          <Sec icon="✅">Actioned</Sec>
+          <div style={{ display: "grid", gap: 3 }}>
+            {DEMO_DATA.actioned.map((w, i) => (<div key={i} style={{ padding: "5px 10px", borderRadius: 7, background: "rgba(52,211,153,0.04)", border: "1px solid rgba(52,211,153,0.08)", display: "flex", justifyContent: "space-between" }}><span style={{ fontSize: 10, color: "#cbd5e1" }}>{w.a}</span><span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fontWeight: 700, color: "#34d399" }}>{w.s}/mo</span></div>))}
+          </div>
+        </>)}
       </div>)}
 
       {/* ═══ SUBS ═══ */}
@@ -3203,7 +3494,9 @@ function DashboardInner() {
         {goals.length > 0 && (
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 11, color:'#64748b', marginBottom: 6, textTransform:'uppercase', letterSpacing:'0.09em', fontWeight:600 }}>Savings Projection</div>
-            {plan.surplus <= 0 && !hasActualData ? (
+            {!canAccess('goal_projections') ? (
+              <ProBadge feature="Goal projections & completion dates" message="Upgrade to Pro to see projected completion dates" isSignedIn={!!authUser} onUpgrade={() => setUpgradeOpen(true)} onSignIn={() => { setTab('settings'); setAuthView('signup'); setAuthError(''); setAuthSuccess(''); setShowForgotPw(false); }} />
+            ) : plan.surplus <= 0 && !hasActualData ? (
               <Note color="#f87171">Adjust your Planner to increase monthly surplus — projection unavailable</Note>
             ) : (
               <>
@@ -3322,7 +3615,11 @@ function DashboardInner() {
                 <span>{pct}% complete</span>
               </div>
               <div style={{ fontSize:11, color:'#475569' }}>
-                {proj.startsWith('Plan:') ? proj : <>Projected: <span style={{ color:proj==='Complete'?'#34d399':proj.includes('Increase')?'#f87171':'#94a3b8' }}>{proj}</span></>}
+                {canAccess('goal_projections') ? (
+                  proj.startsWith('Plan:') ? proj : <>Projected: <span style={{ color:proj==='Complete'?'#34d399':proj.includes('Increase')?'#f87171':'#94a3b8' }}>{proj}</span></>
+                ) : (
+                  <>Projected: <span onClick={() => setUpgradeOpen(true)} style={{ cursor:'pointer', padding:'1px 7px', borderRadius:20, background:'rgba(251,191,36,0.12)', border:'1px solid rgba(251,191,36,0.25)', color:'#fbbf24', fontSize:10, fontWeight:700 }}>Pro</span></>
+                )}
                 {g.targetDate && <span style={{ marginLeft:8, color:'#334155' }}>· Target: {goalFmtDate(g.targetDate)}</span>}
               </div>
             </div>
@@ -3643,6 +3940,9 @@ function DashboardInner() {
                 </div>
               )}
             </div>
+            {!canAccess('history_12mo') && (
+              <ProBadge feature="12 months of spending patterns" message="Upgrade to Pro for 12 months of spending patterns" isSignedIn={!!authUser} onUpgrade={() => setUpgradeOpen(true)} onSignIn={() => { setTab('settings'); setAuthView('signup'); setAuthError(''); setAuthSuccess(''); setShowForgotPw(false); }} />
+            )}
           </>);
         })();
         })()}
@@ -3824,13 +4124,20 @@ function DashboardInner() {
               );
             })}
           </div>
+          {!canAccess('history_12mo') && (
+            <ProBadge feature="Search 12 months of transactions" message="Upgrade to Pro to search across 12 months" isSignedIn={!!authUser} onUpgrade={() => setUpgradeOpen(true)} onSignIn={() => { setTab('settings'); setAuthView('signup'); setAuthError(''); setAuthSuccess(''); setShowForgotPw(false); }} />
+          )}
         </div>
         );
       })()}
 
       {/* ═══ AI CHAT ═══ */}
       {tab === "aichat" && (<div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)', minHeight: 400 }}>
-        {!aiKey ? (
+        {!canAccess('ai_chat') ? (
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 16px' }}>
+            <ProBadge feature="AI-powered financial chat" message="Upgrade to Pro for AI-powered insights" isSignedIn={!!authUser} onUpgrade={() => setUpgradeOpen(true)} onSignIn={() => { setTab('settings'); setAuthView('signup'); setAuthError(''); setAuthSuccess(''); setShowForgotPw(false); }} />
+          </div>
+        ) : !aiKey ? (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 32, textAlign: 'center' }}>
             <div style={{ fontSize: 40 }}>🤖</div>
             <div style={{ fontSize: 15, color: '#94a3b8', fontWeight: 600 }}>No AI provider connected</div>
@@ -4002,6 +4309,10 @@ function DashboardInner() {
           onSetShowForgotPw={setShowForgotPw}
           onChangePassword={handleChangePassword}
         />
+
+        {userTier === 'free' && (
+          <ProBadge feature="Encrypted cloud sync" message="Upgrade to Pro for encrypted cloud sync across devices" isSignedIn={!!authUser} onUpgrade={() => setUpgradeOpen(true)} onSignIn={() => { setTab('settings'); setAuthView('signup'); setAuthError(''); setAuthSuccess(''); setShowForgotPw(false); }} />
+        )}
 
         {/* Drop zone */}
         <div
