@@ -698,7 +698,7 @@ const tabGroups=[
   {label:"Summary",  tabs:[{id:"overview",l:"📊 Overview"},{id:"planner",l:"🎛️ Planner"}]},
   {label:"Assets",   tabs:[{id:"networth",l:"💰 Net Worth"},{id:"property",l:"🏠 Property"}]},
   {label:"Spending", tabs:[{id:"committed",l:"📌 Committed"},{id:"health",l:"💊 Health"},{id:"variable",l:"🛒 Variable"},{id:"paypal",l:"💳 PayPal"},{id:"savings",l:"🏦 Savings"}]},
-  {label:"Insights", tabs:[{id:"insights",l:"💡 Insights"},{id:"deep",l:"🔬 Deep Dive"},{id:"trend",l:"📉 Trend"},{id:"subs",l:"📱 Subs"},{id:"heatmap",l:"📅 Heatmap"},{id:"search",l:"🔍 Search"},{id:"aichat",l:"🤖 AI Chat"}]},
+  {label:"Insights", tabs:[{id:"insights",l:"💡 Insights"},{id:"deep",l:"🔬 Deep Dive"},{id:"trend",l:"📉 Trend"},{id:"subs",l:"📱 Subs"},{id:"heatmap",l:"📅 Heatmap"},{id:"search",l:"🔍 Search"}]},
   {label:"Planning", tabs:[{id:"goals",l:"🎯 Goals"},{id:"tax",l:"💸 Tax"},{id:"compare",l:"⚖️ Compare"},{id:"growth",l:"🌱 Growth"}]},
   {label:"System",   tabs:[{id:"settings",l:"⚙️ Settings"}]},
 ];
@@ -1690,6 +1690,8 @@ function DashboardInner() {
   }, [aiConfig.provider, aiConfig.model]);
 
   // ── AI Chat state ──
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatUnread, setChatUnread] = useState(false);
   const [chatMessages, setChatMessages] = useState([]); // [{role:'user'|'assistant', text:string}]
   const [chatInput, setChatInput] = useState('');
   const [chatStreaming, setChatStreaming] = useState(false);
@@ -1735,6 +1737,12 @@ function DashboardInner() {
   useEffect(() => { chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMessages]);
   // Expose tab navigation for inline category link buttons rendered via dangerouslySetInnerHTML
   useEffect(() => { window.__chatNav = (t) => setTab(t); return () => { delete window.__chatNav; }; }, []);
+  // Close chat panel on Escape
+  useEffect(() => {
+    const handler = (e) => { if (e.key === 'Escape') setChatOpen(false); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
   // Drain message queue when streaming finishes
   useEffect(() => {
     if (!chatStreaming && chatQueueRef.current.length > 0) {
@@ -1822,6 +1830,7 @@ function DashboardInner() {
         if (!assistantText) setChatMessages([...newMessages, { role: 'assistant', text: '(No response)' }]);
         setChatStreaming(false);
         setChatSuggestions(assistantText ? getFollowUpSuggestions(assistantText) : []);
+        setChatUnread(prev => prev || !chatOpen);
       },
       (err) => {
         const msg = err.message || '';
@@ -4131,161 +4140,6 @@ function DashboardInner() {
         );
       })()}
 
-      {/* ═══ AI CHAT ═══ */}
-      {tab === "aichat" && (<div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)', minHeight: 400 }}>
-        {!canAccess('ai_chat') ? (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 16px' }}>
-            <ProBadge feature="AI-powered financial chat" message="Upgrade to Pro for AI-powered insights" isSignedIn={!!authUser} onUpgrade={() => setUpgradeOpen(true)} onSignIn={() => { setTab('settings'); setAuthView('signup'); setAuthError(''); setAuthSuccess(''); setShowForgotPw(false); }} />
-          </div>
-        ) : !aiKey ? (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 32, textAlign: 'center' }}>
-            <div style={{ fontSize: 40 }}>🤖</div>
-            <div style={{ fontSize: 15, color: '#94a3b8', fontWeight: 600 }}>No AI provider connected</div>
-            <div style={{ fontSize: 12, color: '#475569', maxWidth: 280, lineHeight: 1.7 }}>Connect an AI provider in Settings to get personalised financial insights.</div>
-            <button onClick={() => setTab('settings')} style={{ marginTop: 8, padding: '9px 20px', borderRadius: 10, background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)', color: '#818cf8', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Go to Settings</button>
-          </div>
-        ) : (<>
-          {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexShrink: 0, flexWrap: 'wrap', gap: 6 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <div style={{ fontSize: 12, color: '#475569' }}>
-                {AI_PROVIDERS[aiProvider]?.label} · {AI_PROVIDERS[aiProvider]?.models.find(m => m.id === aiModel)?.label || aiModel}
-                {isLiveData && <span style={{ marginLeft: 8, color: '#34d399' }}>● live data</span>}
-              </div>
-              {/* Quick action pills */}
-              {[
-                { label: '📊 Summarise my month', prompt: 'Give me a concise monthly summary of my finances. Include: total income, total spending, savings rate, top 3 spending categories, and one thing I should consider changing.' },
-                { label: '🏠 Cost of living check', prompt: 'Compare my spending to typical Australian benchmarks. Am I above or below average on groceries, dining, transport, and utilities? Use ABS data as a rough guide.' },
-              ].map(({ label, prompt }) => (
-                <button key={label} onClick={() => sendChatMessage(prompt)} disabled={chatStreaming}
-                  style={{ padding: '3px 10px', borderRadius: 20, background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', color: '#818cf8', fontSize: 10, cursor: chatStreaming ? 'default' : 'pointer', opacity: chatStreaming ? 0.5 : 1, fontWeight: 500, whiteSpace: 'nowrap' }}
-                  onMouseEnter={e => { if (!chatStreaming) e.currentTarget.style.background = 'rgba(99,102,241,0.16)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(99,102,241,0.08)'; }}
-                >{label}</button>
-              ))}
-            </div>
-            {chatMessages.length > 0 && (
-              <button onClick={() => { setChatMessages([]); setChatSuggestions([]); }} style={{ padding: '4px 10px', borderRadius: 7, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', color: '#475569', fontSize: 10, cursor: 'pointer' }}>Clear conversation</button>
-            )}
-          </div>
-          {/* Message area */}
-          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10, paddingRight: 2 }}>
-            {chatMessages.length === 0 && (
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
-                <div style={{ fontSize: 32, opacity: 0.4 }}>💬</div>
-                <div style={{ fontSize: 12, color: '#64748b', textAlign: 'center', maxWidth: 260, lineHeight: 1.7, opacity: 0.7 }}>Ask anything about your finances — spending patterns, saving tips, mortgage analysis, budget advice.</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 320 }}>
-                  {[
-                    'What did I spend the most on last month?',
-                    'How can I improve my savings rate?',
-                    'Are there any spending patterns I should worry about?',
-                  ].map(prompt => (
-                    <button key={prompt} onClick={() => sendChatMessage(prompt)} style={{ padding: '9px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8', fontSize: 12, cursor: 'pointer', textAlign: 'left', lineHeight: 1.4, transition: 'background 0.15s' }}
-                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
-                    >{prompt}</button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {chatMessages.map((msg, i) => {
-              const isLastAssistant = msg.role === 'assistant' && i === chatMessages.length - 1 && !chatStreaming;
-              return (
-                <div key={i}>
-                  <div style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
-                    <div style={{
-                      maxWidth: '85%', padding: '9px 13px', borderRadius: msg.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
-                      background: msg.role === 'user' ? 'rgba(99,102,241,0.18)' : msg.isError ? 'rgba(248,113,113,0.07)' : 'rgba(255,255,255,0.055)',
-                      border: msg.role === 'user' ? '1px solid rgba(99,102,241,0.25)' : msg.isError ? '1px solid rgba(248,113,113,0.18)' : '1px solid rgba(255,255,255,0.07)',
-                      fontSize: 12, color: msg.isError ? '#fca5a5' : '#e2e8f0', lineHeight: 1.75,
-                    }}>
-                      {msg.role === 'assistant' ? (<>
-                        {(() => {
-                          // Simple markdown: bold, bullet lists, numbered lists
-                          const parts = msg.text.split('\n');
-                          return parts.map((line, li) => {
-                            const isBullet = /^[-*•]\s/.test(line);
-                            const isNum = /^\d+\.\s/.test(line);
-                            // Apply markdown formatting
-                            let formatted = line
-                              .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-                              .replace(/`(.+?)`/g, '<code style="background:rgba(255,255,255,0.08);padding:1px 4px;border-radius:3px;font-size:11px">$1</code>');
-                            // Apply category links — replace matched terms with inline buttons
-                            CHAT_CATEGORY_LINKS.forEach(({ pattern, tab: targetTab }) => {
-                              formatted = formatted.replace(pattern, (match) =>
-                                `<button onclick="window.__chatNav('${targetTab}')" style="background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.25);color:#a5b4fc;border-radius:4px;padding:0 5px;font-size:11px;cursor:pointer;font-family:inherit;line-height:1.6">${match}</button>`
-                              );
-                            });
-                            return (
-                              <div key={li} style={{ marginLeft: (isBullet || isNum) ? 8 : 0, paddingLeft: (isBullet || isNum) ? 8 : 0, borderLeft: (isBullet || isNum) ? '2px solid rgba(255,255,255,0.1)' : 'none', marginBottom: line === '' ? 6 : 2 }}
-                                dangerouslySetInnerHTML={{ __html: formatted || '&nbsp;' }}
-                              />
-                            );
-                          });
-                        })()}
-                        {msg.action && <button onClick={() => setTab(msg.action.tab)} style={{ marginTop: 8, padding: '5px 10px', borderRadius: 7, background: 'rgba(248,113,113,0.15)', border: '1px solid rgba(248,113,113,0.25)', color: '#fca5a5', fontSize: 11, cursor: 'pointer', display: 'block' }}>{msg.action.label}</button>}
-                      </>) : msg.text}
-                    </div>
-                  </div>
-                  {/* Follow-up suggestions after last assistant message */}
-                  {isLastAssistant && chatSuggestions.length > 0 && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6, paddingLeft: 4 }}>
-                      {chatSuggestions.map(s => (
-                        <button key={s} onClick={() => { setChatSuggestions([]); sendChatMessage(s); }}
-                          style={{ padding: '4px 10px', borderRadius: 20, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', fontSize: 11, cursor: 'pointer', transition: 'background 0.15s' }}
-                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.09)'}
-                          onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
-                        >{s}</button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-            {chatStreaming && chatMessages[chatMessages.length - 1]?.role !== 'assistant' && (
-              <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-                <div style={{ padding: '10px 14px', borderRadius: '14px 14px 14px 4px', background: 'rgba(255,255,255,0.055)', border: '1px solid rgba(255,255,255,0.07)' }}>
-                  <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
-                    {[0,1,2].map(j => <span key={j} style={{ width: 5, height: 5, borderRadius: '50%', background: '#64748b', animation: 'chatDot 1.2s infinite', animationDelay: `${j * 0.2}s`, display: 'inline-block' }} />)}
-                  </span>
-                </div>
-              </div>
-            )}
-            <div ref={chatBottomRef} />
-          </div>
-          {/* Input area */}
-          <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'flex-end', flexShrink: 0 }}>
-            <textarea
-              ref={chatInputRef}
-              value={chatInput}
-              onChange={e => setChatInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); } }}
-              disabled={chatStreaming}
-              placeholder="Ask about your finances…"
-              rows={1}
-              style={{
-                flex: 1, resize: 'none', maxHeight: 80, overflowY: 'auto',
-                padding: '10px 13px', borderRadius: 12,
-                background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
-                color: '#e2e8f0', fontSize: 12, lineHeight: 1.5,
-                outline: 'none', fontFamily: 'inherit',
-                opacity: chatStreaming ? 0.5 : 1,
-              }}
-            />
-            <button
-              onClick={sendChatMessage}
-              disabled={chatStreaming || !chatInput.trim()}
-              style={{
-                padding: '10px 14px', borderRadius: 12, flexShrink: 0,
-                background: chatStreaming || !chatInput.trim() ? 'rgba(99,102,241,0.08)' : 'rgba(99,102,241,0.25)',
-                border: '1px solid rgba(99,102,241,0.3)', color: chatStreaming || !chatInput.trim() ? '#475569' : '#818cf8',
-                fontSize: 16, cursor: chatStreaming || !chatInput.trim() ? 'default' : 'pointer', lineHeight: 1,
-              }}
-            >↑</button>
-          </div>
-          <style>{`@keyframes chatDot { 0%,80%,100%{opacity:0.2} 40%{opacity:1} }`}</style>
-        </>)}
-      </div>)}
 
       {/* ═══ SETTINGS ═══ */}
       {tab === "settings" && (<div>
@@ -4606,6 +4460,264 @@ function DashboardInner() {
           />
         ) : null;
       })()}
+
+      {/* ═══ AI CHAT FAB + FLOATING PANEL ═══ */}
+      <style>{`
+        @keyframes chatDot { 0%,80%,100%{opacity:0.2} 40%{opacity:1} }
+        @keyframes fabPulse { 0%{box-shadow:0 4px 20px rgba(79,110,247,0.3)} 50%{box-shadow:0 4px 32px rgba(79,110,247,0.65),0 0 0 8px rgba(79,110,247,0.12)} 100%{box-shadow:0 4px 20px rgba(79,110,247,0.3)} }
+        .chat-fab { animation: fabPulse 2s ease-in-out 3; }
+        .chat-fab:hover { transform: scale(1.08) !important; }
+      `}</style>
+
+      {/* FAB */}
+      <button
+        className="chat-fab"
+        onClick={() => { setChatOpen(o => !o); setChatUnread(false); }}
+        title="AI Chat"
+        style={{
+          position: 'fixed',
+          bottom: isMobile ? 16 : 24,
+          right: isMobile ? 16 : 24,
+          width: isMobile ? 44 : 52,
+          height: isMobile ? 44 : 52,
+          borderRadius: '50%',
+          background: 'linear-gradient(135deg,#4f6ef7,#7c3aed)',
+          border: 'none',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: isMobile ? 20 : 24,
+          boxShadow: '0 4px 20px rgba(79,110,247,0.3)',
+          zIndex: 9999,
+          transition: 'transform 0.15s',
+          flexShrink: 0,
+        }}
+      >
+        {chatOpen ? '✕' : '🤖'}
+        {chatUnread && !chatOpen && (
+          <span style={{
+            position: 'absolute', top: 2, right: 2,
+            width: 10, height: 10, borderRadius: '50%',
+            background: '#34d399', border: '2px solid #0b0b17',
+          }} />
+        )}
+      </button>
+
+      {/* Floating chat panel */}
+      {chatOpen && (
+        <div
+          onClick={e => { if (e.target === e.currentTarget) { setChatOpen(false); } }}
+          style={{
+            position: 'fixed',
+            bottom: isMobile ? 0 : 88,
+            right: isMobile ? 0 : 24,
+            width: isMobile ? '100vw' : 400,
+            height: isMobile ? '95vh' : undefined,
+            maxHeight: isMobile ? '95vh' : '70vh',
+            background: '#0c0e1a',
+            borderRadius: isMobile ? '16px 16px 0 0' : 16,
+            border: '1px solid rgba(255,255,255,0.08)',
+            boxShadow: '0 8px 40px rgba(0,0,0,0.5)',
+            zIndex: 9998,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+          }}
+        >
+          {/* Panel header */}
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '12px 16px', background: 'rgba(255,255,255,0.03)',
+            borderBottom: '1px solid rgba(255,255,255,0.07)', flexShrink: 0,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 15, fontWeight: 700, color: '#e2e8f0' }}>AI Insights</span>
+              {aiKey && (
+                <span style={{ fontSize: 10, color: '#475569', padding: '1px 7px', borderRadius: 20, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                  {AI_PROVIDERS[aiProvider]?.sub || AI_PROVIDERS[aiProvider]?.label}
+                  {isLiveData && <span style={{ marginLeft: 5, color: '#34d399' }}>● live</span>}
+                </span>
+              )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {chatMessages.length > 0 && (
+                <button onClick={() => { setChatMessages([]); setChatSuggestions([]); }} style={{ padding: '3px 8px', borderRadius: 6, background: 'none', border: '1px solid rgba(255,255,255,0.07)', color: '#475569', fontSize: 10, cursor: 'pointer' }}>Clear</button>
+              )}
+              <button onClick={() => setChatOpen(false)} style={{ background: 'none', border: 'none', color: '#475569', fontSize: 18, cursor: 'pointer', lineHeight: 1, padding: '0 2px' }}>✕</button>
+            </div>
+          </div>
+
+          {/* Panel body */}
+          {!canAccess('ai_chat') ? (
+            /* ── Free/unauthenticated teaser ── */
+            <div style={{ flex: 1, overflowY: 'auto', padding: '20px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ textAlign: 'center', padding: '8px 0 4px' }}>
+                <div style={{ fontSize: 28, marginBottom: 8 }}>🤖</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#e2e8f0', marginBottom: 6 }}>AI-Powered Financial Insights</div>
+                <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.7, maxWidth: 300, margin: '0 auto' }}>Ask questions about your spending, get personalised advice, and spot patterns you'd miss.</div>
+              </div>
+              {/* Static example exchange */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '4px 0' }}>
+                {[
+                  { role: 'user', text: 'What did I spend the most on last month?' },
+                  { role: 'assistant', text: 'Groceries at $847, up 12% from the month before. The Harris Farm weekend shops are the main driver.' },
+                  { role: 'user', text: 'How can I hit my house deposit goal faster?' },
+                  { role: 'assistant', text: "At your current savings rate of $1,200/month, you'll reach $60K in 28 months. Cutting dining out by 30% would shave 4 months off." },
+                ].map((m, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                    <div style={{ maxWidth: '85%', padding: '8px 12px', borderRadius: m.role === 'user' ? '12px 12px 4px 12px' : '12px 12px 12px 4px', background: m.role === 'user' ? 'rgba(99,102,241,0.18)' : 'rgba(255,255,255,0.05)', border: m.role === 'user' ? '1px solid rgba(99,102,241,0.25)' : '1px solid rgba(255,255,255,0.07)', fontSize: 11, color: '#94a3b8', lineHeight: 1.6, opacity: 0.75 }}>{m.text}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ textAlign: 'center', fontSize: 10, color: '#334155', marginTop: 2 }}>Works with Claude, ChatGPT, or Gemini — bring your own API key.</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+                <ProBadge feature="AI-powered financial chat" message="Upgrade to Pro for AI-powered insights" isSignedIn={!!authUser} onUpgrade={() => { setUpgradeOpen(true); setChatOpen(false); }} onSignIn={() => { setTab('settings'); setAuthView('signup'); setAuthError(''); setAuthSuccess(''); setShowForgotPw(false); setChatOpen(false); }} />
+                <button onClick={() => { setTab('settings'); setChatOpen(false); }} style={{ padding: '8px 0', borderRadius: 10, background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)', color: '#818cf8', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Set up AI in Settings →</button>
+              </div>
+            </div>
+          ) : !aiKey ? (
+            /* ── No API key ── */
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 28, textAlign: 'center' }}>
+              <div style={{ fontSize: 36 }}>🤖</div>
+              <div style={{ fontSize: 14, color: '#94a3b8', fontWeight: 600 }}>No AI provider connected</div>
+              <div style={{ fontSize: 11, color: '#475569', maxWidth: 240, lineHeight: 1.7 }}>Connect an API key in Settings to get personalised financial insights.</div>
+              <button onClick={() => { setTab('settings'); setChatOpen(false); }} style={{ marginTop: 4, padding: '9px 20px', borderRadius: 10, background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)', color: '#818cf8', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Go to Settings</button>
+            </div>
+          ) : (<>
+            {/* Quick action pills */}
+            <div style={{ display: 'flex', gap: 6, padding: '8px 12px 0', flexShrink: 0, flexWrap: 'wrap' }}>
+              {[
+                { label: '📊 Summarise my month', prompt: 'Give me a concise monthly summary of my finances. Include: total income, total spending, savings rate, top 3 spending categories, and one thing I should consider changing.' },
+                { label: '🏠 Cost of living check', prompt: 'Compare my spending to typical Australian benchmarks. Am I above or below average on groceries, dining, transport, and utilities? Use ABS data as a rough guide.' },
+              ].map(({ label, prompt }) => (
+                <button key={label} onClick={() => sendChatMessage(prompt)} disabled={chatStreaming}
+                  style={{ padding: '3px 10px', borderRadius: 20, background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', color: '#818cf8', fontSize: 10, cursor: chatStreaming ? 'default' : 'pointer', opacity: chatStreaming ? 0.5 : 1, fontWeight: 500, whiteSpace: 'nowrap' }}
+                  onMouseEnter={e => { if (!chatStreaming) e.currentTarget.style.background = 'rgba(99,102,241,0.16)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(99,102,241,0.08)'; }}
+                >{label}</button>
+              ))}
+            </div>
+
+            {/* Message area */}
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10, padding: '10px 12px' }}>
+              {chatMessages.length === 0 && (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, paddingTop: 16 }}>
+                  <div style={{ fontSize: 28, opacity: 0.4 }}>💬</div>
+                  <div style={{ fontSize: 11, color: '#64748b', textAlign: 'center', maxWidth: 240, lineHeight: 1.7 }}>Ask anything about your finances — spending patterns, saving tips, mortgage analysis, budget advice.</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7, width: '100%' }}>
+                    {[
+                      'What did I spend the most on last month?',
+                      'How can I improve my savings rate?',
+                      'Are there any spending patterns I should worry about?',
+                    ].map(prompt => (
+                      <button key={prompt} onClick={() => sendChatMessage(prompt)}
+                        style={{ padding: '8px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8', fontSize: 11, cursor: 'pointer', textAlign: 'left', lineHeight: 1.4 }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
+                      >{prompt}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {chatMessages.map((msg, i) => {
+                const isLastAssistant = msg.role === 'assistant' && i === chatMessages.length - 1 && !chatStreaming;
+                return (
+                  <div key={i}>
+                    <div style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                      <div style={{
+                        maxWidth: '85%', padding: '9px 13px', borderRadius: msg.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
+                        background: msg.role === 'user' ? 'rgba(99,102,241,0.18)' : msg.isError ? 'rgba(248,113,113,0.07)' : 'rgba(255,255,255,0.055)',
+                        border: msg.role === 'user' ? '1px solid rgba(99,102,241,0.25)' : msg.isError ? '1px solid rgba(248,113,113,0.18)' : '1px solid rgba(255,255,255,0.07)',
+                        fontSize: 12, color: msg.isError ? '#fca5a5' : '#e2e8f0', lineHeight: 1.75,
+                      }}>
+                        {msg.role === 'assistant' ? (<>
+                          {(() => {
+                            const parts = msg.text.split('\n');
+                            return parts.map((line, li) => {
+                              const isBullet = /^[-*•]\s/.test(line);
+                              const isNum = /^\d+\.\s/.test(line);
+                              let formatted = line
+                                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                                .replace(/`(.+?)`/g, '<code style="background:rgba(255,255,255,0.08);padding:1px 4px;border-radius:3px;font-size:11px">$1</code>');
+                              CHAT_CATEGORY_LINKS.forEach(({ pattern, tab: targetTab }) => {
+                                formatted = formatted.replace(pattern, (match) =>
+                                  `<button onclick="window.__chatNav('${targetTab}')" style="background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.25);color:#a5b4fc;border-radius:4px;padding:0 5px;font-size:11px;cursor:pointer;font-family:inherit;line-height:1.6">${match}</button>`
+                                );
+                              });
+                              return (
+                                <div key={li} style={{ marginLeft: (isBullet || isNum) ? 8 : 0, paddingLeft: (isBullet || isNum) ? 8 : 0, borderLeft: (isBullet || isNum) ? '2px solid rgba(255,255,255,0.1)' : 'none', marginBottom: line === '' ? 6 : 2 }}
+                                  dangerouslySetInnerHTML={{ __html: formatted || '&nbsp;' }}
+                                />
+                              );
+                            });
+                          })()}
+                          {msg.action && <button onClick={() => { setTab(msg.action.tab); setChatOpen(false); }} style={{ marginTop: 8, padding: '5px 10px', borderRadius: 7, background: 'rgba(248,113,113,0.15)', border: '1px solid rgba(248,113,113,0.25)', color: '#fca5a5', fontSize: 11, cursor: 'pointer', display: 'block' }}>{msg.action.label}</button>}
+                        </>) : msg.text}
+                      </div>
+                    </div>
+                    {isLastAssistant && chatSuggestions.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 6, paddingLeft: 4 }}>
+                        {chatSuggestions.map(s => (
+                          <button key={s} onClick={() => { setChatSuggestions([]); sendChatMessage(s); }}
+                            style={{ padding: '4px 10px', borderRadius: 20, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', fontSize: 11, cursor: 'pointer' }}
+                            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.09)'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
+                          >{s}</button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {chatStreaming && chatMessages[chatMessages.length - 1]?.role !== 'assistant' && (
+                <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                  <div style={{ padding: '10px 14px', borderRadius: '14px 14px 14px 4px', background: 'rgba(255,255,255,0.055)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                    <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+                      {[0,1,2].map(j => <span key={j} style={{ width: 5, height: 5, borderRadius: '50%', background: '#64748b', animation: 'chatDot 1.2s infinite', animationDelay: `${j * 0.2}s`, display: 'inline-block' }} />)}
+                    </span>
+                  </div>
+                </div>
+              )}
+              <div ref={chatBottomRef} />
+            </div>
+
+            {/* Input area */}
+            <div style={{ padding: '8px 12px 12px', borderTop: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                <textarea
+                  ref={chatInputRef}
+                  value={chatInput}
+                  onChange={e => setChatInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); } }}
+                  disabled={chatStreaming}
+                  placeholder="Ask about your finances…"
+                  rows={1}
+                  style={{
+                    flex: 1, resize: 'none', maxHeight: 72, overflowY: 'auto',
+                    padding: '9px 12px', borderRadius: 12,
+                    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+                    color: '#e2e8f0', fontSize: 12, lineHeight: 1.5,
+                    outline: 'none', fontFamily: 'inherit',
+                    opacity: chatStreaming ? 0.5 : 1,
+                  }}
+                />
+                <button
+                  onClick={sendChatMessage}
+                  disabled={chatStreaming || !chatInput.trim()}
+                  style={{
+                    padding: '9px 13px', borderRadius: 12, flexShrink: 0,
+                    background: chatStreaming || !chatInput.trim() ? 'rgba(99,102,241,0.08)' : 'rgba(99,102,241,0.25)',
+                    border: '1px solid rgba(99,102,241,0.3)',
+                    color: chatStreaming || !chatInput.trim() ? '#475569' : '#818cf8',
+                    fontSize: 16, cursor: chatStreaming || !chatInput.trim() ? 'default' : 'pointer', lineHeight: 1,
+                  }}
+                >↑</button>
+              </div>
+            </div>
+          </>)}
+        </div>
+      )}
     </div>
   );
 }
