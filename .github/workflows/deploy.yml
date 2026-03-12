@@ -20,6 +20,11 @@ jobs:
       - run: npm install
 
       - run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_LEMON_PRO_VARIANT: ${{ secrets.VITE_LEMON_PRO_VARIANT }}
+          VITE_LEMON_LIFETIME_VARIANT: ${{ secrets.VITE_LEMON_LIFETIME_VARIANT }}
 
       - uses: peaceiris/actions-gh-pages@v4
         with:
