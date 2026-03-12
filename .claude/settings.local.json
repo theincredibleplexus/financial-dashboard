@@ -6,7 +6,9 @@
       "WebFetch(domain:docs.google.com)",
       "WebFetch(domain:doc-0c-98-sheets.googleusercontent.com)",
       "Bash(grep -r \"Ray\\\\|Safiye\\\\|Saffiye\\\\|saffyup\\\\|1234\\\\|377922\\\\|50000\\\\|Leam\\\\|gateway\\\\|commsec\" /c/Users/r.airey/Desktop/financial-dashboard/ --include=*.md --include=*.html)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(node -e \":*)",
+      "Bash(npm install:*)"
     ]
   }
 }

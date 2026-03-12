@@ -347,11 +347,21 @@ const MERCHANT_MAP = {
     /\bpatreon\b/i, /\bgithub\b/i, /\bnotion\b/i, /crunchyroll/i, /\bdazn\b/i,
     /apple\.com/i, /app store/i, /apple music/i, /apple one/i, /apple tv/i,
     /google one/i, /google workspace/i, /google storage/i,
+    /tidal/i, /xbox.*game\s?pass/i, /playstation.*plus/i, /\bps\s?plus\b/i,
+    /nintendo.*online/i, /\btwitch\b/i, /\bplex\b/i,
+    /nordvpn/i, /expressvpn/i, /surfshark/i,
   ],
 
   // ── Legacy merchant trackers (kept for existing chart aggregations) ────────
   amazon: [/amazon/i, /amzn/i],
   paypal: [/paypal/i],
+
+  // ── Buy Now Pay Later ─────────────────────────────────────────────────────
+  bnpl: [
+    /afterpay/i, /zip\s?pay/i, /zip\s?money/i, /zip\s?co/i,
+    /klarna/i, /\bhumm\b/i, /latitude\s?pay/i, /openpay/i,
+    /brighte/i, /payright/i, /limepay/i, /splitit/i, /laybuy/i,
+  ],
 
   // ── Grocery delivery (before grocery — "Woolworths Online" → grocery_delivery) ──
   grocery_delivery: [
@@ -386,26 +396,50 @@ const MERCHANT_MAP = {
     /industry beans/i, /\bcampos\b/i, /single o/i,
   ],
 
+  // ── Alcohol ───────────────────────────────────────────────────────────────
+  alcohol: [
+    /\bbws\b/i, /dan murphy/i, /liquorland/i, /first choice liquor/i,
+    /vintage cellars/i, /jimmy brings/i, /endeavour group/i,
+    /wine selectors/i, /vinomofo/i, /naked wines/i,
+  ],
+
   // ── Delivery apps (before transport — "Uber Eats" → delivery, not transport) ──
   delivery: [/doordash/i, /uber eats/i, /menulog/i, /deliveroo/i],
 
   // ── Transport ─────────────────────────────────────────────────────────────
   transport: [
     /\bmyki\b/i, /\bopal\b/i, /\bgo card\b/i, /translink/i,
-    /\buber\b/i, /\bdidi\b/i, /\bola\b/i, /\btaxi\b/i,
+    /\buber\b(?!.*eats)/i, /\bdidi\b/i, /\bola\b/i, /\btaxi\b/i,
     /\b13cabs\b/i, /ingogo/i, /\blime\b/i, /\bbeam\b/i, /neuron/i,
+    /\btram\b/i, /\bferry\b/i, /\bmetro\b/i,
   ],
 
   // ── Vehicle ───────────────────────────────────────────────────────────────
   fuel: [
-    /\bbp\b/i, /shell/i, /7-eleven/i, /puma/i, /coles express/i,
+    /\bbp\b/i, /shell/i, /7.?eleven/i, /puma/i, /coles express/i,
     /ampol/i, /united petrol/i, /costco fuel/i, /liberty petrol/i,
     /metro petroleum/i, /speedway/i, /\bvibe\b/i,
+    /\beg\s/i, /eg australia/i, /eg fuel/i, /mobil/i,
   ],
   toll: [
     /citylink/i, /eastlink/i, /\blinkt\b/i, /mylinkt/i, /e-toll/i,
     /\be-tag\b/i, /\broam\b/i, /\bm5\b/i, /\bm7\b/i, /westconnex/i,
     /go via/i,
+  ],
+
+  // ── Parking ───────────────────────────────────────────────────────────────
+  parking: [
+    /wilson parking/i, /secure parking/i, /care park/i, /easypark/i,
+    /paystay/i, /park.*meter/i, /\bparking\b/i, /cellopark/i, /\bdivvy\b/i,
+  ],
+
+  // ── Car ───────────────────────────────────────────────────────────────────
+  // Before insurance so RACV/NRMA/RACQ → car (roadside assist), not insurance
+  car: [
+    /\brego\b/i, /registration/i, /vicroads/i, /service nsw.*rego/i,
+    /bridgestone/i, /beaurepaires/i, /bob jane/i, /jax tyres/i,
+    /car wash/i, /\bmycar\b/i, /ultratune/i, /kmart tyre/i,
+    /\bracv\b/i, /\bnrma\b/i, /\bracq\b/i, /roadside/i,
   ],
 
   // ── Home bills ────────────────────────────────────────────────────────────
@@ -428,6 +462,9 @@ const MERCHANT_MAP = {
     /chemist warehouse/i, /priceline pharmacy/i, /terrywhite/i,
     /terry white/i, /\bblooms\b/i, /ramsay health/i, /healthscope/i,
     /bupa dental/i, /hcf dental/i, /pacific smiles/i,
+    /maven dental/i, /national dental/i, /\bdental\b/i,
+    /optometrist/i, /pathology/i, /radiology/i,
+    /\bi-med\b/i, /sonic health/i, /laverty/i, /qml pathology/i,
   ],
   insurance: [
     /\baami\b/i, /allianz/i, /\bbupa\b/i, /medibank/i, /\bhcf\b/i,
@@ -442,11 +479,35 @@ const MERCHANT_MAP = {
     /goodlife/i, /virgin active/i, /barry's/i, /plus fitness/i,
     /snap fitness/i, /\bgym\b/i, /crossfit/i, /\byoga\b/i,
     /pilates/i, /\brouvy\b/i, /\bzwift\b/i, /\bstrava\b/i,
+    /les mills/i, /peloton/i, /fernwood/i, /\bcurves\b/i,
+    /aquatic/i, /\bswim\b/i, /martial arts/i, /boxing/i, /\bmma\b/i,
   ],
+
+  // ── Personal care ─────────────────────────────────────────────────────────
+  personal_care: [
+    /hairdress/i, /\bbarber\b/i, /beauty/i, /\bnails?\b/i, /\bsalon\b/i,
+    /\bwax\b/i, /laser clinics/i, /endota/i, /just cuts/i,
+    /ella bache/i, /brazilian butterfly/i,
+  ],
+
   education: [
     /university/i, /\btafe\b/i, /coursera/i, /udemy/i,
     /skillshare/i, /linkedin learning/i, /textbook/i,
   ],
+
+  // ── School ────────────────────────────────────────────────────────────────
+  school: [
+    /school fees/i, /school fund/i, /\bpsw\b/i, /lowes.*uniform/i,
+    /school photo/i, /book\s?list/i, /canteen/i, /excursion/i,
+  ],
+
+  // ── Childcare ─────────────────────────────────────────────────────────────
+  childcare: [
+    /childcare/i, /child care/i, /\bkindi\b/i, /kinderloop/i,
+    /camp australia/i, /goodstart/i, /g8 education/i, /little scholars/i,
+    /before.?school/i, /after.?school/i, /family day care/i,
+  ],
+
   clothing: [
     /uniqlo/i, /\bzara\b/i, /\bh&m\b/i, /cotton on/i, /country road/i,
     /\bmyer\b/i, /david jones/i, /the iconic/i, /\basos\b/i,
@@ -456,19 +517,48 @@ const MERCHANT_MAP = {
     /officeworks/i, /harvey norman/i, /jb hi-fi/i, /jb hifi/i,
     /the good guys/i, /fantastic furniture/i, /\bfreedom\b/i,
     /temple & webster/i, /\badairs\b/i,
+    /mitre 10/i, /beacon lighting/i, /carpet court/i,
+    /\bplumb/i, /electrician/i, /handyman/i,
+    /hire a hubby/i, /jim.?s mowing/i,
   ],
   pets: [
     /petstock/i, /petbarn/i, /city farmers/i, /greencross/i, /\bvet\b/i,
   ],
+
+  // ── Kids ──────────────────────────────────────────────────────────────────
+  kids: [
+    /baby bunting/i, /cotton on kids/i, /best & less/i, /best and less/i,
+    /toys r us/i, /toy world/i, /mr toys/i, /kidstuff/i,
+  ],
+
+  // ── Gifts ─────────────────────────────────────────────────────────────────
+  gifts: [
+    /interflora/i, /florist/i, /\bt2 tea\b/i, /gift\s?card/i,
+    /smiggle/i, /\btypo\b/i, /hallmark/i, /kikki\s?k/i,
+  ],
+
   travel: [
     /airbnb/i, /booking\.com/i, /expedia/i, /\bhotel/i,
     /\bqantas\b/i, /virgin australia/i, /jetstar/i, /rex airlines/i,
     /skyscanner/i, /\bflight\b/i,
+    /\bbonza\b/i, /tigerair/i, /regional express/i, /\brex\b/i,
+    /webjet/i, /trip\.com/i, /agoda/i, /hostelworld/i,
+    /trivago/i, /wotif/i, /lastminute/i, /luxury escapes/i,
+    /\bcruise\b/i, /greyhound/i, /\bnsw trainlink\b/i, /\bv\/line\b/i,
+    /spirit of tasmania/i, /sealink/i, /google flights/i,
+    /travel insurance/i, /cover-?more/i, /world nomads/i,
   ],
   gambling: [
     /\btab\b/i, /sportsbet/i, /ladbrokes/i, /bet365/i,
     /pointsbet/i, /\bneds\b/i, /unibet/i, /\bcrown\b/i,
     /star casino/i, /\bpokies\b/i,
+  ],
+
+  // ── Charity ───────────────────────────────────────────────────────────────
+  charity: [
+    /donation/i, /charity/i, /red cross/i, /salvation army/i,
+    /smith family/i, /gofundme/i, /oxfam/i, /unicef/i,
+    /world vision/i, /beyond blue/i, /movember/i, /rspca/i,
   ],
 
   // ── Government ────────────────────────────────────────────────────────────
@@ -477,9 +567,24 @@ const MERCHANT_MAP = {
     /\bmedicare\b/i, /centrelink/i, /\bcouncil\b/i,
   ],
 
+  // ── Cash ──────────────────────────────────────────────────────────────────
+  cash: [
+    /\batm\b/i, /cash withdrawal/i, /cash w\/d/i,
+    /commonwealth atm/i, /westpac atm/i,
+  ],
+
   // ── Housing ───────────────────────────────────────────────────────────────
+  strata: [
+    /\bstrata\b/i, /owners corp/i, /body corporate/i, /oc levy/i, /\blevies\b/i,
+  ],
   mortgage: [/mortgage/i, /home loan/i, /\boffset\b/i, /\bredraw\b/i],
-  rent:     [/ray white/i, /real estate/i, /\bproperty\b/i, /tenancy/i, /\blease\b/i, /\brea\b/i, /\bdomain\b/i],
+  rent:     [/ray white/i, /real estate/i, /\bproperty\b/i, /tenancy/i, /\blease\b/i, /\brea\b/i, /\bdomain\b/i, /propertyme/i, /\bailo\b/i, /different.*rent/i],
+
+  // ── Personal (hidden from UI — auto-categorises but not shown in filter buttons) ──
+  personal: [
+    /lovehoney/i, /adultshop/i, /adult shop/i, /wild secrets/i,
+    /honey birdette/i, /oh zone/i, /pleasure\s?machine/i,
+  ],
 
   // ── Financial flows ───────────────────────────────────────────────────────
   // transfer: flag so users can choose to exclude from spending totals

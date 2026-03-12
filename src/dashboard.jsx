@@ -2,6 +2,14 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ComposedChart, Line, ReferenceLine, AreaChart, Area, Cell, LineChart, ReferenceDot } from "recharts";
 import { processCSVText, parseCSV, processUniversalBank, applyUserRules, aggregateTxs, extractMerchantPattern } from "./dataLoader.js";
 import { streamChat, buildFinancialContext } from "./aiProvider.js";
+import { supabase, signUp as supaSignUp, signIn as supaSignIn, signOut as supaSignOut, getUser, onAuthStateChange, getVault, createVault, loadAllEncryptedData, saveEncryptedData, getUserTier } from "./supabase.js";
+import { generateSalt, saltToBase64, base64ToSalt, encryptData, decryptData, deriveKey, encrypt, decrypt } from "./encryption.js";
+
+// ─── ENCRYPTION KEY CACHE ─────────────────────────────────────────────────────
+// Stored at module level so they survive re-renders but are wiped on tab close.
+// Never persisted to localStorage or any other storage.
+let _encKey  = null; // CryptoKey (AES-256-GCM) — null until user logs in
+let _encSalt = null; // Uint8Array — vault salt, needed to encrypt new blobs
 
 // ─── DEMO DATA ───────────────────────────────────────────────────────────────
 // Fictional persona: Alex & Jordan Chen, 14 Banksia Drive, Brunswick VIC 3056
@@ -509,8 +517,8 @@ const Note=({color,children})=>(<div style={{marginTop:7,padding:9,borderRadius:
 const Row=({label,value,color,bold,note,borderTop})=>(<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:bold?"8px 0":"4px 0",borderTop:borderTop?"1px solid rgba(255,255,255,0.06)":"none",marginTop:borderTop?4:0}}><span style={{fontSize:13,color:bold?"#e2e8f0":"#94a3b8",fontWeight:bold?700:400}}>{label}{note&&<span style={{fontSize:10,color:"#475569",marginLeft:6}}>{note}</span>}</span><span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:bold?15:13,fontWeight:bold?700:600,color:color||"#cbd5e1"}}>{value}</span></div>);
 const Badge=({text,color})=>(<span style={{fontSize:9,padding:"2px 7px",borderRadius:20,fontWeight:700,background:`${color}15`,color,whiteSpace:"nowrap"}}>{text}</span>);
 
-const CAT_COLORS={grocery:'#34d399',restaurant:'#fb923c',takeaway:'#f97316',coffee:'#a78bfa',delivery:'#60a5fa',transport:'#38bdf8',fuel:'#facc15',toll:'#94a3b8',utilities:'#a8a29e',telco:'#6ee7b7',insurance:'#93c5fd',sub:'#c084fc',health:'#f472b6',fitness:'#86efac',home:'#fde68a',clothing:'#fca5a5',education:'#67e8f9',pets:'#bbf7d0',travel:'#7dd3fc',gambling:'#fb7185',government:'#94a3b8',income:'#34d399',transfer:'#64748b',mortgage:'#94a3b8',rent:'#94a3b8',amazon:'#f97316',paypal:'#3b82f6',shopping:'#e879f9',other:'#475569'};
-const ALL_CATS=['grocery','restaurant','takeaway','coffee','delivery','transport','fuel','toll','utilities','telco','insurance','sub','health','fitness','home','clothing','education','pets','travel','gambling','government','income','transfer','mortgage','rent','other'];
+const CAT_COLORS={grocery:'#34d399',restaurant:'#fb923c',takeaway:'#f97316',coffee:'#a78bfa',delivery:'#60a5fa',alcohol:'#f59e0b',transport:'#38bdf8',fuel:'#facc15',toll:'#94a3b8',parking:'#78716c',car:'#64748b',utilities:'#a8a29e',telco:'#6ee7b7',insurance:'#93c5fd',sub:'#c084fc',health:'#f472b6',fitness:'#86efac',personal_care:'#e879f9',education:'#67e8f9',school:'#22d3ee',childcare:'#f9a8d4',clothing:'#fca5a5',home:'#fde68a',kids:'#bef264',gifts:'#fb923c',bnpl:'#a3e635',charity:'#4ade80',strata:'#94a3b8',pets:'#bbf7d0',travel:'#7dd3fc',gambling:'#fb7185',government:'#94a3b8',cash:'#9ca3af',mortgage:'#94a3b8',rent:'#94a3b8',amazon:'#f97316',paypal:'#3b82f6',shopping:'#e879f9',personal:'#475569',other:'#475569',grocery_delivery:'#6ee7b7'};
+const ALL_CATS=['grocery','restaurant','takeaway','coffee','delivery','alcohol','transport','fuel','toll','parking','car','home','utilities','telco','insurance','health','fitness','personal_care','clothing','education','school','childcare','kids','sub','bnpl','gifts','charity','strata','travel','gambling','cash','government','mortgage','rent','transfer','other'];
 
 
 const Card=({label,value,type,detail})=>(<div style={{padding:"9px 11px",borderRadius:10,background:type==="in"?"rgba(52,211,153,0.04)":"rgba(248,113,113,0.04)",border:`1px solid ${type==="in"?"rgba(52,211,153,0.08)":"rgba(248,113,113,0.08)"}`}}><div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,fontWeight:600,color:"#cbd5e1"}}>{label}</span><span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:700,fontSize:13,color:type==="in"?"#34d399":"#f87171"}}>{type==="in"?"+":"−"}{value}</span></div><div style={{fontSize:10,color:"#475569",marginTop:2}}>{detail}</div></div>);
@@ -794,6 +802,353 @@ function ColumnMappingModal({ file, onClose, onSuccess }) {
   );
 }
 
+// ─── DECRYPT PROMPT MODAL ─────────────────────────────────────────────────────
+// Shown on page load when a valid Supabase session exists but the encryption
+// key isn't in memory (e.g. after a tab refresh). The user re-enters their
+// password to re-derive the key and decrypt their cloud data.
+function DecryptPromptModal({ email, onUnlock, onSignOut }) {
+  const [pw,      setPw]      = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState('');
+
+  const handleSubmit = async () => {
+    if (!pw) return;
+    setLoading(true); setError('');
+    try {
+      await onUnlock(pw);
+    } catch (err) {
+      setError(err.message === 'DECRYPTION_FAILED'
+        ? 'Wrong password. Please try again.'
+        : 'Failed to decrypt. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const overlay = {
+    position: 'fixed', inset: 0, zIndex: 9999,
+    background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+  };
+  const box = {
+    background: '#13131f', border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: 16, padding: '28px 28px 24px', width: '100%', maxWidth: 360,
+    boxShadow: '0 24px 64px rgba(0,0,0,0.6)',
+  };
+
+  return (
+    <div style={overlay}>
+      <div style={box}>
+        <div style={{ fontSize: 20, marginBottom: 4 }}>🔐</div>
+        <div style={{ fontSize: 15, fontWeight: 700, color: '#e2e8f0', marginBottom: 6 }}>Enter your password</div>
+        <div style={{ fontSize: 12, color: '#64748b', marginBottom: 18, lineHeight: 1.6 }}>
+          Your data is encrypted. Enter your Comma password to decrypt it for this session.
+          {email && <><br /><span style={{ color: '#475569' }}>{email}</span></>}
+        </div>
+        <input
+          type="password"
+          autoFocus
+          value={pw}
+          onChange={e => setPw(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+          placeholder="Password"
+          style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 9, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.3)', color: '#e2e8f0', fontSize: 13, fontFamily: 'inherit', outline: 'none', marginBottom: 8 }}
+        />
+        {error && <div style={{ fontSize: 11, color: '#f87171', marginBottom: 8 }}>{error}</div>}
+        <button
+          onClick={handleSubmit}
+          disabled={!pw || loading}
+          style={{ width: '100%', padding: '10px 0', borderRadius: 9, border: 'none', background: pw && !loading ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : 'rgba(255,255,255,0.06)', color: pw && !loading ? '#fff' : '#475569', fontSize: 13, fontWeight: 700, cursor: pw && !loading ? 'pointer' : 'not-allowed', fontFamily: 'inherit', marginBottom: 8 }}
+        >{loading ? 'Decrypting…' : 'Unlock'}</button>
+        <button
+          onClick={onSignOut}
+          style={{ width: '100%', padding: '8px 0', borderRadius: 9, border: '1px solid rgba(255,255,255,0.07)', background: 'transparent', color: '#475569', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}
+        >Sign out instead</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── AUTH SECTION (Settings tab) ─────────────────────────────────────────────
+function passwordStrength(pw) {
+  if (!pw || pw.length < 8) return { label: 'Too short', color: '#f87171', width: '15%' };
+  const hasUpper = /[A-Z]/.test(pw);
+  const hasNum   = /[0-9]/.test(pw);
+  const hasSpec  = /[^A-Za-z0-9]/.test(pw);
+  const score = (pw.length >= 12 ? 1 : 0) + (hasUpper ? 1 : 0) + (hasNum ? 1 : 0) + (hasSpec ? 1 : 0);
+  if (score <= 1) return { label: 'Weak',   color: '#f87171', width: '30%' };
+  if (score <= 2) return { label: 'Fair',   color: '#fbbf24', width: '55%' };
+  if (score <= 3) return { label: 'Strong', color: '#34d399', width: '80%' };
+  return           { label: 'Very strong', color: '#34d399', width: '100%' };
+}
+
+function AuthSection({
+  authUser, userTier, authView, authLoading, authError, authSuccess,
+  lastSynced, syncStatus, showForgotPw,
+  onSetAuthView, onSignUp, onSignIn, onSignOut, onSyncNow, onSetShowForgotPw,
+  onChangePassword,
+}) {
+  const [email, setEmail]         = useState('');
+  const [password, setPassword]   = useState('');
+  const [confirmPw, setConfirmPw] = useState('');
+  const [understood, setUnderstood] = useState(false);
+  const [showPw, setShowPw]       = useState(false);
+
+  // Change-password form state
+  const [showChangePw,    setShowChangePw]    = useState(false);
+  const [curPw,           setCurPw]           = useState('');
+  const [newPw,           setNewPw]           = useState('');
+  const [confirmNewPw,    setConfirmNewPw]    = useState('');
+  const [changePwLoading, setChangePwLoading] = useState(false);
+  const [changePwError,   setChangePwError]   = useState('');
+  const [changePwSuccess, setChangePwSuccess] = useState('');
+
+  const resetChangePwForm = () => { setCurPw(''); setNewPw(''); setConfirmNewPw(''); setChangePwError(''); setChangePwSuccess(''); };
+
+  const handleChangePwSubmit = async () => {
+    setChangePwError(''); setChangePwSuccess('');
+    if (newPw !== confirmNewPw) { setChangePwError("New passwords don't match."); return; }
+    if (newPw.length < 8)       { setChangePwError('New password must be at least 8 characters.'); return; }
+    setChangePwLoading(true);
+    try {
+      await onChangePassword(curPw, newPw);
+      setChangePwSuccess('Password changed. All data re-encrypted.');
+      resetChangePwForm();
+      setShowChangePw(false);
+    } catch (err) {
+      if (err.message === 'WRONG_CURRENT_PASSWORD') {
+        setChangePwError('Current password is incorrect.');
+      } else if (err.message === 'AUTH_UPDATE_FAILED') {
+        setChangePwError('Password update failed. Data rolled back — try again.');
+      } else if (err.message === 'RE_ENCRYPT_SAVE_FAILED') {
+        setChangePwError('Failed to save re-encrypted data. Please try again.');
+      } else {
+        setChangePwError('An unexpected error occurred.');
+      }
+    } finally {
+      setChangePwLoading(false);
+    }
+  };
+
+  const resetForm = () => { setEmail(''); setPassword(''); setConfirmPw(''); setUnderstood(false); setShowPw(false); };
+
+  const pwStrength = passwordStrength(password);
+  const pwMatch    = password === confirmPw && confirmPw.length > 0;
+  const canSignUp  = email && password.length >= 8 && pwMatch && understood;
+
+  const sectionStyle = {
+    marginBottom: 24,
+    padding: '14px 16px',
+    borderRadius: 12,
+    background: 'rgba(255,255,255,0.015)',
+    border: '1px solid rgba(255,255,255,0.06)',
+  };
+  const inputStyle = {
+    width: '100%', boxSizing: 'border-box',
+    padding: '9px 12px', borderRadius: 9,
+    border: '1px solid rgba(255,255,255,0.08)',
+    background: 'rgba(0,0,0,0.2)',
+    color: '#cbd5e1', fontSize: 12,
+    fontFamily: 'inherit', outline: 'none',
+    marginBottom: 8,
+  };
+  const btnPrimary = (disabled) => ({
+    width: '100%', padding: '10px 0', borderRadius: 9,
+    border: 'none', cursor: disabled ? 'not-allowed' : 'pointer',
+    background: disabled ? 'rgba(99,102,241,0.2)' : 'rgba(99,102,241,0.7)',
+    color: disabled ? '#475569' : '#e0e7ff',
+    fontSize: 13, fontWeight: 700, fontFamily: 'inherit',
+    opacity: disabled ? 0.6 : 1,
+  });
+
+  // ── Signed in view ──
+  if (authUser) {
+    const tierColors = { free: '#64748b', pro: '#818cf8', lifetime: '#34d399' };
+    const tierColor  = tierColors[userTier] ?? '#64748b';
+    const fmt = ts => ts ? new Date(ts).toLocaleString('en-AU', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : '—';
+    return (
+      <div style={sectionStyle}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:12 }}>
+          <div>
+            <div style={{ fontSize:11, color:'#475569', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:4 }}>Account</div>
+            <div style={{ fontSize:13, color:'#cbd5e1' }}>{authUser.email}</div>
+            <div style={{ marginTop:6, display:'inline-flex', alignItems:'center', gap:6 }}>
+              <span style={{ fontSize:10, padding:'2px 8px', borderRadius:20, fontWeight:700, background:`${tierColor}18`, color:tierColor, textTransform:'capitalize' }}>{userTier}</span>
+              {lastSynced && <span style={{ fontSize:10, color:'#475569' }}>· Last synced {fmt(lastSynced)}</span>}
+            </div>
+          </div>
+          <button
+            onClick={onSignOut}
+            style={{ padding:'6px 12px', borderRadius:8, border:'1px solid rgba(255,255,255,0.08)', background:'rgba(255,255,255,0.03)', color:'#64748b', fontSize:11, fontWeight:600, cursor:'pointer', fontFamily:'inherit', flexShrink:0 }}
+          >Sign out</button>
+        </div>
+        <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+          <button
+            onClick={onSyncNow}
+            disabled={syncStatus === 'syncing'}
+            style={{ padding:'8px 16px', borderRadius:9, border:'1px solid rgba(99,102,241,0.25)', background:'rgba(99,102,241,0.08)', color:'#818cf8', fontSize:12, fontWeight:600, cursor:syncStatus==='syncing'?'not-allowed':'pointer', fontFamily:'inherit', opacity:syncStatus==='syncing'?0.6:1 }}
+          >{syncStatus === 'syncing' ? 'Syncing…' : 'Sync now'}</button>
+          {syncStatus === 'synced'  && <span style={{ fontSize:11, color:'#34d399' }}>✓ Synced</span>}
+          {syncStatus === 'offline' && <span style={{ fontSize:11, color:'#f59e0b' }}>⚠ Offline — queued</span>}
+          {changePwSuccess && <span style={{ fontSize:11, color:'#34d399' }}>{changePwSuccess}</span>}
+          {!changePwSuccess && authSuccess && syncStatus === 'idle' && <span style={{ fontSize:11, color:'#34d399' }}>{authSuccess}</span>}
+          {authError   && <span style={{ fontSize:11, color:'#f87171' }}>{authError}</span>}
+        </div>
+
+        {/* ── Change password ── */}
+        <div style={{ marginTop:14, borderTop:'1px solid rgba(255,255,255,0.06)', paddingTop:12 }}>
+          <button
+            onClick={() => { setShowChangePw(v => !v); resetChangePwForm(); }}
+            style={{ background:'none', border:'none', color:'#475569', fontSize:11, cursor:'pointer', padding:0, fontFamily:'inherit', fontWeight:600 }}
+          >{showChangePw ? '▲ Hide' : '▼ Change password'}</button>
+
+          {showChangePw && (
+            <div style={{ marginTop:10 }}>
+              {/* Warning */}
+              <div style={{ marginBottom:10, padding:'9px 11px', borderRadius:9, background:'rgba(251,191,36,0.06)', border:'1px solid rgba(251,191,36,0.18)', fontSize:11, color:'#fbbf24', lineHeight:1.7 }}>
+                Changing your password re-encrypts all your data. This may take a moment.
+              </div>
+
+              <input
+                type="password"
+                value={curPw}
+                onChange={e => setCurPw(e.target.value)}
+                placeholder="Current password"
+                style={{ width:'100%', boxSizing:'border-box', padding:'9px 12px', borderRadius:9, border:'1px solid rgba(255,255,255,0.08)', background:'rgba(0,0,0,0.2)', color:'#cbd5e1', fontSize:12, fontFamily:'inherit', outline:'none', marginBottom:8 }}
+              />
+
+              <input
+                type="password"
+                value={newPw}
+                onChange={e => setNewPw(e.target.value)}
+                placeholder="New password"
+                style={{ width:'100%', boxSizing:'border-box', padding:'9px 12px', borderRadius:9, border:'1px solid rgba(255,255,255,0.08)', background:'rgba(0,0,0,0.2)', color:'#cbd5e1', fontSize:12, fontFamily:'inherit', outline:'none', marginBottom:4 }}
+              />
+              {/* Strength bar */}
+              {newPw && (() => { const s = passwordStrength(newPw); return (
+                <div style={{ marginBottom:8 }}>
+                  <div style={{ height:3, borderRadius:2, background:'rgba(255,255,255,0.06)', marginBottom:3 }}>
+                    <div style={{ height:'100%', borderRadius:2, background:s.color, width:s.width, transition:'width 0.2s, background 0.2s' }} />
+                  </div>
+                  <div style={{ fontSize:10, color:s.color }}>{s.label}</div>
+                </div>
+              ); })()}
+
+              <input
+                type="password"
+                value={confirmNewPw}
+                onChange={e => setConfirmNewPw(e.target.value)}
+                placeholder="Confirm new password"
+                style={{ width:'100%', boxSizing:'border-box', padding:'9px 12px', borderRadius:9, border:`1px solid ${confirmNewPw && confirmNewPw !== newPw ? 'rgba(248,113,113,0.4)' : 'rgba(255,255,255,0.08)'}`, background:'rgba(0,0,0,0.2)', color:'#cbd5e1', fontSize:12, fontFamily:'inherit', outline:'none', marginBottom:4 }}
+              />
+              {confirmNewPw && confirmNewPw !== newPw && <div style={{ fontSize:10, color:'#f87171', marginBottom:8 }}>Passwords don't match</div>}
+
+              {changePwError && <div style={{ fontSize:11, color:'#f87171', marginBottom:8 }}>{changePwError}</div>}
+
+              <button
+                onClick={handleChangePwSubmit}
+                disabled={changePwLoading || !curPw || !newPw || newPw !== confirmNewPw || newPw.length < 8}
+                style={{ width:'100%', padding:'9px 0', borderRadius:9, border:'none', cursor: (changePwLoading || !curPw || !newPw || newPw !== confirmNewPw || newPw.length < 8) ? 'not-allowed' : 'pointer', background: (changePwLoading || !curPw || !newPw || newPw !== confirmNewPw || newPw.length < 8) ? 'rgba(99,102,241,0.2)' : 'rgba(99,102,241,0.7)', color: (changePwLoading || !curPw || !newPw || newPw !== confirmNewPw || newPw.length < 8) ? '#475569' : '#e0e7ff', fontSize:12, fontWeight:700, fontFamily:'inherit', marginTop:4 }}
+              >{changePwLoading ? 'Re-encrypting…' : 'Change Password'}</button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── None view (subtle links) ──
+  if (authView === 'none') {
+    return (
+      <div style={{ display:'flex', justifyContent:'flex-end', alignItems:'center', gap:12, marginBottom:20 }}>
+        {authSuccess && <span style={{ fontSize:11, color:'#34d399', flex:1 }}>{authSuccess}</span>}
+        <button onClick={() => { resetForm(); onSetAuthView('signin'); }} style={{ background:'none', border:'none', color:'#475569', fontSize:11, cursor:'pointer', padding:0, fontFamily:'inherit' }}>Sign in</button>
+        <button onClick={() => { resetForm(); onSetAuthView('signup'); }} style={{ background:'none', border:'none', color:'#818cf8', fontSize:11, cursor:'pointer', padding:0, fontFamily:'inherit', fontWeight:600 }}>Create account</button>
+      </div>
+    );
+  }
+
+  // ── Sign up form ──
+  if (authView === 'signup') {
+    return (
+      <div style={sectionStyle}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
+          <div style={{ fontSize:13, fontWeight:700, color:'#e2e8f0' }}>Create account</div>
+          <button onClick={() => { resetForm(); onSetAuthView('none'); }} style={{ background:'none', border:'none', color:'#475569', fontSize:13, cursor:'pointer', padding:0, lineHeight:1 }}>✕</button>
+        </div>
+
+        {/* Warning box */}
+        <div style={{ marginBottom:12, padding:'10px 12px', borderRadius:9, background:'rgba(251,191,36,0.06)', border:'1px solid rgba(251,191,36,0.2)', fontSize:11, color:'#fbbf24', lineHeight:1.7 }}>
+          <strong>Important:</strong> Your password encrypts your data. If you forget it, your data cannot be recovered — by you or by us. We recommend using a password manager.
+        </div>
+
+        <input type="email"    value={email}     onChange={e=>setEmail(e.target.value)}     placeholder="Email"            style={inputStyle} />
+        <div style={{ position:'relative', marginBottom:8 }}>
+          <input type={showPw?'text':'password'} value={password}  onChange={e=>setPassword(e.target.value)}  placeholder="Password"         style={{...inputStyle, marginBottom:0, paddingRight:36}} />
+          <button onClick={()=>setShowPw(v=>!v)} style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', color:'#475569', cursor:'pointer', fontSize:12, padding:0, lineHeight:1 }}>{showPw?'🙈':'👁'}</button>
+        </div>
+        {/* Strength bar */}
+        {password && (
+          <div style={{ marginBottom:8 }}>
+            <div style={{ height:3, borderRadius:2, background:'rgba(255,255,255,0.06)', marginBottom:4 }}>
+              <div style={{ height:'100%', borderRadius:2, background:pwStrength.color, width:pwStrength.width, transition:'width 0.2s, background 0.2s' }} />
+            </div>
+            <div style={{ fontSize:10, color:pwStrength.color }}>{pwStrength.label}</div>
+          </div>
+        )}
+        <input type="password" value={confirmPw} onChange={e=>setConfirmPw(e.target.value)} placeholder="Confirm password"   style={{...inputStyle, borderColor: confirmPw && !pwMatch ? 'rgba(248,113,113,0.4)' : 'rgba(255,255,255,0.08)'}} />
+        {confirmPw && !pwMatch && <div style={{ fontSize:10, color:'#f87171', marginTop:-6, marginBottom:8 }}>Passwords don't match</div>}
+
+        {/* Understanding checkbox */}
+        <label style={{ display:'flex', alignItems:'flex-start', gap:8, marginBottom:12, cursor:'pointer' }}>
+          <input type="checkbox" checked={understood} onChange={e=>setUnderstood(e.target.checked)} style={{ marginTop:2, flexShrink:0 }} />
+          <span style={{ fontSize:11, color:'#64748b', lineHeight:1.6 }}>I understand my password cannot be recovered</span>
+        </label>
+
+        {authError && <div style={{ marginBottom:8, fontSize:11, color:'#f87171' }}>{authError}</div>}
+
+        <button onClick={() => onSignUp(email, password)} disabled={!canSignUp || authLoading} style={btnPrimary(!canSignUp || authLoading)}>
+          {authLoading ? 'Creating account…' : 'Create Account'}
+        </button>
+      </div>
+    );
+  }
+
+  // ── Sign in form ──
+  if (authView === 'signin') {
+    return (
+      <div style={sectionStyle}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
+          <div style={{ fontSize:13, fontWeight:700, color:'#e2e8f0' }}>Sign in</div>
+          <button onClick={() => { resetForm(); onSetAuthView('none'); }} style={{ background:'none', border:'none', color:'#475569', fontSize:13, cursor:'pointer', padding:0, lineHeight:1 }}>✕</button>
+        </div>
+
+        <input type="email"    value={email}    onChange={e=>setEmail(e.target.value)}    placeholder="Email"    style={inputStyle} />
+        <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Password" style={inputStyle} />
+
+        {authError && <div style={{ marginBottom:8, fontSize:11, color:'#f87171' }}>{authError}</div>}
+
+        <button onClick={() => onSignIn(email, password)} disabled={!email || !password || authLoading} style={btnPrimary(!email || !password || authLoading)}>
+          {authLoading ? 'Signing in…' : 'Sign in'}
+        </button>
+
+        <button
+          onClick={() => onSetShowForgotPw(v => !v)}
+          style={{ background:'none', border:'none', color:'#475569', fontSize:11, cursor:'pointer', padding:'8px 0 0', fontFamily:'inherit', display:'block' }}
+        >Forgot password?</button>
+
+        {showForgotPw && (
+          <div style={{ marginTop:8, padding:'10px 12px', borderRadius:9, background:'rgba(248,113,113,0.05)', border:'1px solid rgba(248,113,113,0.15)', fontSize:11, color:'#94a3b8', lineHeight:1.7 }}>
+            Your data is encrypted with your password. If you've forgotten it, your data cannot be recovered. You can create a new account and start fresh.
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return null;
+}
+
 // ─── WELCOME SCREEN ───────────────────────────────────────────────────────────
 function WelcomeScreen({ onLaunchDemo, onUploadFiles }) {
   const [dropActive, setDropActive] = useState(false);
@@ -1033,6 +1388,7 @@ function DashboardInner() {
       ({ id, filename, rawCsvText, type, bankLabel, status, rowCount })
     );
     localStorage.setItem('comma_uploaded_data', JSON.stringify(toStore));
+    queueSync('transactions', toStore);
   }, [uploadedFiles]);
 
   // ─── GOALS STATE ──────────────────────────────────────────────────────────
@@ -1043,6 +1399,7 @@ function DashboardInner() {
 
   useEffect(() => {
     localStorage.setItem('comma_goals', JSON.stringify(goals));
+    queueSync('goals', goals);
   }, [goals]);
 
   const addGoal    = (goal)          => setGoals(prev => [...prev, goal]);
@@ -1061,7 +1418,9 @@ function DashboardInner() {
     catch { return BS_DEFAULT_LIABS; }
   });
   useEffect(() => {
-    localStorage.setItem('comma_balance_sheet', JSON.stringify({ assets: bsAssets, liabilities: bsLiabilities }));
+    const sheet = { assets: bsAssets, liabilities: bsLiabilities };
+    localStorage.setItem('comma_balance_sheet', JSON.stringify(sheet));
+    queueSync('balance_sheet', sheet);
   }, [bsAssets, bsLiabilities]);
   const [editingBsCell,    setEditingBsCell]    = useState(null); // { type:'asset'|'liability', id }
   const [editingBsValue,   setEditingBsValue]   = useState('');
@@ -1077,6 +1436,7 @@ function DashboardInner() {
   });
   useEffect(() => {
     localStorage.setItem('comma_nw_snapshots', JSON.stringify(nwSnapshots));
+    queueSync('snapshots', nwSnapshots);
   }, [nwSnapshots]);
   const [nwSnapshotMsg,        setNwSnapshotMsg]        = useState(null); // confirmation string
   const [nwSnapshotConfirm,    setNwSnapshotConfirm]    = useState(false); // pending replace?
@@ -1092,6 +1452,7 @@ function DashboardInner() {
 
   useEffect(() => {
     localStorage.setItem('comma_user_rules', JSON.stringify(userRules));
+    queueSync('user_rules', userRules);
   }, [userRules]);
 
   useEffect(() => {
@@ -1108,6 +1469,60 @@ function DashboardInner() {
   const [importRulesText, setImportRulesText] = useState('');
   const [importRulesStatus, setImportRulesStatus] = useState(null); // {ok:bool, msg:string}
   const [hoverDay, setHoverDay] = useState(null); // heatmap hover state
+
+  // ─── AUTH STATE ──────────────────────────────────────────────────────────
+  const [authUser,          setAuthUser]          = useState(null);
+  const [userTier,          setUserTier]          = useState('free');
+  const [authView,          setAuthView]          = useState('none'); // 'none' | 'signup' | 'signin'
+  const [authLoading,       setAuthLoading]       = useState(false);
+  const [authError,         setAuthError]         = useState('');
+  const [authSuccess,       setAuthSuccess]       = useState('');
+  const [lastSynced,        setLastSynced]        = useState(null);
+  const [syncStatus,        setSyncStatus]        = useState('idle'); // 'idle'|'syncing'|'synced'|'offline'
+  const [showForgotPw,      setShowForgotPw]      = useState(false);
+  const [showDecryptPrompt, setShowDecryptPrompt] = useState(false);
+
+  const authUserRef    = useRef(null);  // mirrors authUser for use in async callbacks
+  const syncTimers     = useRef({});    // debounce timer per data type
+  const syncQueue      = useRef(new Map()); // dataType → value, for offline retry
+  const syncRetryRef   = useRef(null);  // retry timer handle
+  const syncFadeRef    = useRef(null);  // "synced" fade-out timer handle
+  const sessionPasswordRef = useRef(''); // in-memory only, cleared on sign-out
+
+  // Keep authUserRef in sync
+  useEffect(() => { authUserRef.current = authUser; }, [authUser]);
+
+  // On app load: check for a pre-existing Supabase session (e.g. after a tab refresh).
+  // If one exists but the encryption key isn't cached, show the decrypt prompt.
+  useEffect(() => {
+    async function restoreSession() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) return;
+        const user = session.user;
+        authUserRef.current = user;
+        setAuthUser(user);
+        setUserTier(await getUserTier(user.id));
+        // Key not in memory — prompt the user for their password
+        if (!_encKey) setShowDecryptPrompt(true);
+      } catch {
+        // Silently ignore — user stays logged out
+      }
+    }
+    restoreSession();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Handler called by DecryptPromptModal when the user submits their password
+  const handleDecryptUnlock = async (password) => {
+    const user = authUserRef.current;
+    if (!user) throw new Error('No session');
+    const vault = await getVault(user.id);
+    if (!vault) throw new Error('No vault found. Please sign in again.');
+    // decryptAndLoadAll caches _encKey/_encSalt on success; throws on wrong password
+    await decryptAndLoadAll(user.id, password, vault);
+    setLastSynced(new Date().toISOString());
+    setShowDecryptPrompt(false);
+  };
 
   // ── AI Insights config ──
   const AI_PROVIDERS = {
@@ -1134,6 +1549,13 @@ function DashboardInner() {
     });
     setAiTestStatus(null);
   }
+
+  // Sync ai_config to cloud whenever provider or model changes — intentionally excludes apiKey
+  useEffect(() => {
+    const configToSync = { provider: aiConfig.provider, model: aiConfig.model };
+    if (configToSync.provider || configToSync.model) queueSync('ai_config', configToSync);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiConfig.provider, aiConfig.model]);
 
   // ── AI Chat state ──
   const [chatMessages, setChatMessages] = useState([]); // [{role:'user'|'assistant', text:string}]
@@ -1378,6 +1800,294 @@ function DashboardInner() {
       };
       reader.readAsText(file);
     });
+  };
+
+  // ─── AUTH INIT ───────────────────────────────────────────────────────────
+  useEffect(() => {
+    let subscription;
+    getUser().then(async user => {
+      if (user) { setAuthUser(user); setUserTier(await getUserTier(user.id)); }
+    });
+    onAuthStateChange(async (event, session) => {
+      const user = session?.user ?? null;
+      setAuthUser(user);
+      setUserTier(user ? await getUserTier(user.id) : 'free');
+    }).then(sub => { subscription = sub; });
+    return () => subscription?.unsubscribe();
+  }, []);
+
+  // ─── SYNC MANAGER ────────────────────────────────────────────────────────
+
+  // Show "Synced" badge for 3s then revert to idle
+  const showSynced = () => {
+    setSyncStatus('synced');
+    clearTimeout(syncFadeRef.current);
+    syncFadeRef.current = setTimeout(() => setSyncStatus('idle'), 3000);
+  };
+
+  // Encrypt one data type with the cached key and save to Supabase.
+  // Returns true on success.
+  const doSync = async (dataType, value) => {
+    const userId = authUserRef.current?.id;
+    if (!userId || !_encKey || !_encSalt) return false;
+    setSyncStatus('syncing');
+    try {
+      const blob = await encrypt(JSON.stringify(value), _encKey);
+      const { success } = await saveEncryptedData(userId, dataType, blob);
+      if (!success) throw new Error('save failed');
+      setLastSynced(new Date().toISOString());
+      syncQueue.current.delete(dataType);
+      if (syncQueue.current.size === 0) showSynced();
+      return true;
+    } catch {
+      setSyncStatus('offline');
+      syncQueue.current.set(dataType, value);
+      // Retry all queued types after 30s
+      clearTimeout(syncRetryRef.current);
+      syncRetryRef.current = setTimeout(flushSyncQueue, 30000);
+      return false;
+    }
+  };
+
+  // Flush all queued (failed) syncs — called on retry timer or next successful change
+  const flushSyncQueue = async () => {
+    if (syncQueue.current.size === 0) return;
+    for (const [dt, val] of Array.from(syncQueue.current)) {
+      await doSync(dt, val);
+    }
+  };
+
+  // Debounce: wait 2s after last change before syncing, to avoid hammering Supabase
+  const queueSync = (dataType, value) => {
+    if (!_encKey || !_encSalt || !authUserRef.current) return;
+    clearTimeout(syncTimers.current[dataType]);
+    syncTimers.current[dataType] = setTimeout(() => doSync(dataType, value), 2000);
+    // Also attempt to flush any offline queue on the next change
+    if (syncQueue.current.size > 0) {
+      clearTimeout(syncRetryRef.current);
+      syncRetryRef.current = setTimeout(flushSyncQueue, 2100);
+    }
+  };
+
+  // ─── AUTH HELPERS ────────────────────────────────────────────────────────
+
+  const getLocalDataForSync = () => ({
+    transactions: JSON.parse(localStorage.getItem('comma_uploaded_data') || '[]'),
+    goals:        JSON.parse(localStorage.getItem('comma_goals')          || '[]'),
+    snapshots:    JSON.parse(localStorage.getItem('comma_nw_snapshots')   || '[]'),
+    balance_sheet:JSON.parse(localStorage.getItem('comma_balance_sheet')  || 'null'),
+    user_rules:   JSON.parse(localStorage.getItem('comma_user_rules')     || '{}'),
+    ai_config:    (() => { const c = JSON.parse(localStorage.getItem('comma_ai_config') || '{}'); const { apiKey: _, ...rest } = c; return rest; })(),
+  });
+
+  const encryptAndUploadAll = async (userId, password, salt) => {
+    const data = getLocalDataForSync();
+    for (const [dataType, value] of Object.entries(data)) {
+      if (!value || (Array.isArray(value) ? value.length === 0 : Object.keys(value).length === 0)) continue;
+      const blob = _encKey
+        ? await encrypt(JSON.stringify(value), _encKey)
+        : await encryptData(value, password, salt);
+      await saveEncryptedData(userId, dataType, blob);
+    }
+  };
+
+  const handleAuthSignUp = async (email, password) => {
+    setAuthLoading(true); setAuthError(''); setAuthSuccess('');
+    try {
+      const { user, error } = await supaSignUp(email, password);
+      if (error || !user) { setAuthError(error?.message || 'Sign up failed.'); return; }
+      const salt = generateSalt();
+      await createVault(user.id, saltToBase64(salt));
+      // Derive and cache the key before uploading
+      _encSalt = salt;
+      _encKey  = await deriveKey(password, salt);
+      sessionPasswordRef.current = password;
+      await encryptAndUploadAll(user.id, password, salt);
+      authUserRef.current = user;
+      setAuthUser(user);
+      setUserTier(await getUserTier(user.id));
+      setAuthView('none');
+      setLastSynced(new Date().toISOString());
+      setAuthSuccess('Account created. Your data is now encrypted and synced.');
+    } catch (err) {
+      setAuthError(err.message || 'An error occurred.');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  // Shared helper: derive key, decrypt all blobs, populate state
+  const decryptAndLoadAll = async (userId, password, vault) => {
+    const salt       = base64ToSalt(vault.salt);
+    const iterations = vault.iteration_count ?? 600000;
+    // Derive key once, cache for the session
+    const key       = await deriveKey(password, salt, iterations);
+    const allBlobs  = await loadAllEncryptedData(userId);
+    for (const [dataType, blob] of Object.entries(allBlobs)) {
+      let decrypted;
+      try {
+        const plaintext = await (async () => {
+          const combined = Uint8Array.from(atob(blob), c => c.charCodeAt(0));
+          const iv = combined.slice(0, 12);
+          const ciphertext = combined.slice(12);
+          const buf = await window.crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
+          return JSON.parse(new TextDecoder().decode(buf));
+        })();
+        decrypted = plaintext;
+      } catch {
+        throw new Error('DECRYPTION_FAILED');
+      }
+      if (dataType === 'transactions') {
+        setUploadedFiles(decrypted.map(item => processUploadedFile(item.filename, item.rawCsvText)));
+      } else if (dataType === 'goals') {
+        setGoals(decrypted);
+      } else if (dataType === 'snapshots') {
+        setNwSnapshots(decrypted);
+      } else if (dataType === 'balance_sheet') {
+        if (decrypted?.assets) setBsAssets(decrypted.assets);
+        if (decrypted?.liabilities) setBsLiabilities(decrypted.liabilities);
+      } else if (dataType === 'user_rules') {
+        setUserRules(decrypted);
+      } else if (dataType === 'ai_config') {
+        saveAiConfig(decrypted);
+      }
+    }
+    // Cache key + salt for auto-sync
+    _encKey  = key;
+    _encSalt = salt;
+    sessionPasswordRef.current = password;
+  };
+
+  const handleAuthSignIn = async (email, password) => {
+    setAuthLoading(true); setAuthError(''); setAuthSuccess('');
+    try {
+      const { user, error } = await supaSignIn(email, password);
+      if (error || !user) { setAuthError('Incorrect password. Please try again.'); return; }
+      const vault = await getVault(user.id);
+      if (!vault) { setAuthError('Incorrect password. Please try again.'); await supaSignOut(); return; }
+      try {
+        await decryptAndLoadAll(user.id, password, vault);
+      } catch {
+        setAuthError('Incorrect password. Please try again.'); await supaSignOut(); return;
+      }
+      authUserRef.current = user;
+      setAuthUser(user);
+      setUserTier(await getUserTier(user.id));
+      setAuthView('none');
+      setLastSynced(new Date().toISOString());
+      setAuthSuccess('Signed in. Your encrypted data has been loaded.');
+    } catch (err) {
+      setAuthError('Incorrect password. Please try again.');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleAuthSignOut = async () => {
+    await supaSignOut();
+    // Wipe all in-memory key material
+    _encKey  = null;
+    _encSalt = null;
+    sessionPasswordRef.current = '';
+    authUserRef.current = null;
+    // Cancel any pending sync timers
+    Object.values(syncTimers.current).forEach(clearTimeout);
+    syncTimers.current = {};
+    syncQueue.current.clear();
+    clearTimeout(syncRetryRef.current);
+    clearTimeout(syncFadeRef.current);
+    setSyncStatus('idle');
+    setAuthUser(null);
+    setUserTier('free');
+    setAuthView('none');
+    setAuthError(''); setAuthSuccess('');
+    setShowWelcome(true);
+  };
+
+  const handleSyncNow = async () => {
+    if (!authUser) return;
+    // If key not cached (e.g. tab reload before decrypt prompt answered), skip
+    if (!_encKey || !_encSalt) {
+      setAuthError('Enter your password to unlock sync.');
+      setShowDecryptPrompt(true);
+      return;
+    }
+    setSyncStatus('syncing');
+    try {
+      const data = getLocalDataForSync();
+      for (const [dataType, value] of Object.entries(data)) {
+        if (!value || (Array.isArray(value) ? value.length === 0 : Object.keys(value).length === 0)) continue;
+        const blob = await encrypt(JSON.stringify(value), _encKey);
+        await saveEncryptedData(authUser.id, dataType, blob);
+      }
+      syncQueue.current.clear();
+      setLastSynced(new Date().toISOString());
+      showSynced();
+    } catch {
+      setSyncStatus('offline');
+      setAuthError('Sync failed. Please try again.');
+    }
+  };
+
+  // ─── CHANGE PASSWORD ─────────────────────────────────────────────────────
+  const handleChangePassword = async (currentPassword, newPassword) => {
+    const user = authUserRef.current;
+    if (!user || !_encKey || !_encSalt) throw new Error('Not authenticated.');
+
+    // 1. Verify current password by attempting to decrypt a known blob
+    const vault = await getVault(user.id);
+    if (!vault) throw new Error('Vault not found.');
+    const salt = base64ToSalt(vault.salt);
+    const iterations = vault.iteration_count ?? 600000;
+    const oldKey = await deriveKey(currentPassword, salt, iterations);
+
+    // Load all encrypted blobs
+    const allBlobs = await loadAllEncryptedData(user.id);
+    const entries = Object.entries(allBlobs);
+
+    // Verify current password against first available blob
+    // `decrypt` and `encrypt` are the statically-imported low-level functions
+    if (entries.length > 0) {
+      const [, firstBlob] = entries[0];
+      try {
+        await decrypt(firstBlob, oldKey);
+      } catch {
+        throw new Error('WRONG_CURRENT_PASSWORD');
+      }
+    }
+
+    // 2. Derive new key
+    const newKey = await deriveKey(newPassword, salt, iterations);
+
+    // 3. Re-encrypt all blobs: decrypt with old key, encrypt with new key
+    const reEncrypted = {};
+    for (const [dataType, blob] of entries) {
+      const plaintext = await decrypt(blob, oldKey);
+      reEncrypted[dataType] = await encrypt(plaintext, newKey);
+    }
+
+    // 4. Save re-encrypted blobs to Supabase
+    const saveErrors = [];
+    for (const [dataType, newBlob] of Object.entries(reEncrypted)) {
+      const { error } = await saveEncryptedData(user.id, dataType, newBlob);
+      if (error) saveErrors.push({ dataType, error });
+    }
+    if (saveErrors.length > 0) {
+      throw new Error('RE_ENCRYPT_SAVE_FAILED');
+    }
+
+    // 5. Update Supabase auth password
+    const { error: authUpdateError } = await supabase.auth.updateUser({ password: newPassword });
+    if (authUpdateError) {
+      // Roll back: re-encrypt with old key
+      for (const [dataType, blob] of entries) {
+        await saveEncryptedData(user.id, dataType, blob);
+      }
+      throw new Error('AUTH_UPDATE_FAILED');
+    }
+
+    // 6. Update cached key in memory
+    _encKey = newKey;
   };
 
   // ─── PLANNER CALCULATIONS ────────────────────────────────────────────────
@@ -1629,23 +2339,6 @@ function DashboardInner() {
 
   const SidebarContent = ({ onSelect }) => (
     <>
-      <div style={{ padding: "0 10px", marginBottom: 12 }}>
-        <h1 style={{ margin: "0 0 4px", fontSize: 17, fontWeight: 700, color: "#f1f5f9", lineHeight: 1.3 }}>Financial Dashboard</h1>
-        <div style={{ color: "#475569", fontSize: 11 }}>{upData?.dateRange ? `${upData.dateRange.start} — ${upData.dateRange.end}` : "Sep '25 — Feb '26 · Demo"} · AUD</div>
-      </div>
-      <div style={{ padding: "0 10px", marginBottom: 16 }}>
-        {isLiveData ? (
-          <div style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 8px", borderRadius:8, background:"rgba(52,211,153,0.08)", border:"1px solid rgba(52,211,153,0.15)" }}>
-            <div style={{ width:6, height:6, borderRadius:"50%", background:"#34d399", flexShrink:0 }} />
-            <span style={{ fontSize:10, color:"#34d399", fontWeight:700 }}>Your data · {bankTxCount.toLocaleString()} transactions</span>
-          </div>
-        ) : (
-          <div style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 8px", borderRadius:8, background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.06)" }}>
-            <div style={{ width:6, height:6, borderRadius:"50%", background:"#475569", flexShrink:0 }} />
-            <span style={{ fontSize:10, color:"#475569" }}>Demo data — upload CSV to use your own</span>
-          </div>
-        )}
-      </div>
       {tabGroups.map(group => (
         <div key={group.label} style={{ marginBottom: 2 }}>
           <div style={{ fontSize: 10, color: "#334155", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700, padding: "10px 10px 4px" }}>{group.label}</div>
@@ -1664,9 +2357,54 @@ function DashboardInner() {
       <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
       <style>{`input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#e2e8f0;cursor:pointer;border:2px solid #0b0b17;box-shadow:0 0 6px rgba(96,165,250,0.5)} input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#e2e8f0;cursor:pointer;border:2px solid #0b0b17}`}</style>
 
+      {/* Decrypt prompt — shown on page reload when session exists but key is not cached */}
+      {showDecryptPrompt && (
+        <DecryptPromptModal
+          email={authUser?.email}
+          onUnlock={handleDecryptUnlock}
+          onSignOut={() => { handleAuthSignOut(); setShowDecryptPrompt(false); }}
+        />
+      )}
+
       {/* ═══ DESKTOP SIDEBAR ═══ */}
       {!isMobile && (
         <div style={{ width: 215, flexShrink: 0, background: "rgba(255,255,255,0.015)", borderRight: "1px solid rgba(255,255,255,0.05)", padding: "22px 12px 48px", display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh", overflowY: "auto" }}>
+          {/* Comma logo */}
+          <div style={{ padding: "0 10px", marginBottom: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+              <span style={{ background: "linear-gradient(135deg,#6366f1,#8b5cf6)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", fontWeight: 800, fontSize: 20, lineHeight: 1 }}>,</span>
+              <span style={{ fontWeight: 700, fontSize: 16, color: "#f1f5f9" }}>Comma</span>
+              {isLiveData ? (
+                <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 20, background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.2)", color: "#34d399", fontWeight: 700 }}>Your data</span>
+              ) : (
+                <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 20, background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.2)", color: "#f59e0b", fontWeight: 700 }}>Demo</span>
+              )}
+              {/* Auto-sync status indicator */}
+              {authUser && syncStatus === 'syncing' && (
+                <span style={{ fontSize: 9, color: '#818cf8' }}>Syncing…</span>
+              )}
+              {authUser && syncStatus === 'synced' && (
+                <span style={{ fontSize: 9, color: '#34d399' }}>✓ Synced</span>
+              )}
+              {authUser && syncStatus === 'offline' && (
+                <span style={{ fontSize: 9, color: '#f59e0b', cursor: 'pointer' }} title="Offline — will retry" onClick={handleSyncNow}>⚠ Offline</span>
+              )}
+            </div>
+            <div style={{ color: "#475569", fontSize: 11 }}>{upData?.dateRange ? `${upData.dateRange.start} — ${upData.dateRange.end}` : "Sep '25 — Feb '26 · Demo"} · AUD</div>
+          </div>
+          <div style={{ padding: "0 10px", marginBottom: 16 }}>
+            {isLiveData ? (
+              <div style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 8px", borderRadius:8, background:"rgba(52,211,153,0.08)", border:"1px solid rgba(52,211,153,0.15)" }}>
+                <div style={{ width:6, height:6, borderRadius:"50%", background:"#34d399", flexShrink:0 }} />
+                <span style={{ fontSize:10, color:"#34d399", fontWeight:700 }}>Your data · {bankTxCount.toLocaleString()} transactions</span>
+              </div>
+            ) : (
+              <div style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 8px", borderRadius:8, background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.06)" }}>
+                <div style={{ width:6, height:6, borderRadius:"50%", background:"#475569", flexShrink:0 }} />
+                <span style={{ fontSize:10, color:"#475569" }}>Demo data — upload CSV to use your own</span>
+              </div>
+            )}
+          </div>
           <SidebarContent />
         </div>
       )}
@@ -1674,7 +2412,15 @@ function DashboardInner() {
       {/* ═══ MOBILE TOP BAR ═══ */}
       {isMobile && (
         <div style={{ position: "fixed", top: 0, left: 0, right: 0, height: 52, background: "#0d0d1f", borderBottom: "1px solid rgba(255,255,255,0.07)", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", zIndex: 100 }}>
-          <span style={{ fontSize: 15, fontWeight: 700, color: "#f1f5f9" }}>Financial Dashboard</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ background: "linear-gradient(135deg,#6366f1,#8b5cf6)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", fontWeight: 800, fontSize: 20, lineHeight: 1 }}>,</span>
+            <span style={{ fontWeight: 700, fontSize: 15, color: "#f1f5f9" }}>Comma</span>
+            {isLiveData ? (
+              <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 20, background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.2)", color: "#34d399", fontWeight: 700 }}>Your data</span>
+            ) : (
+              <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 20, background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.2)", color: "#f59e0b", fontWeight: 700 }}>Demo</span>
+            )}
+          </div>
           <button onClick={() => setMenuOpen(o => !o)} style={{ background: "none", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "#94a3b8", fontSize: 18, width: 38, height: 38, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
             {menuOpen ? "✕" : "☰"}
           </button>
@@ -1682,8 +2428,9 @@ function DashboardInner() {
       )}
 
       {/* ═══ MOBILE MENU OVERLAY ═══ */}
+      {/* Slides in below the fixed top bar (top: 52px) so the header stays visible */}
       {isMobile && menuOpen && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 99, background: "#0b0b17", overflowY: "auto", padding: "64px 12px 48px" }}>
+        <div style={{ position: "fixed", top: 52, left: 0, right: 0, bottom: 0, zIndex: 99, background: "#0b0b17", overflowY: "auto", padding: "16px 12px 48px", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
           <SidebarContent onSelect={() => setMenuOpen(false)} />
         </div>
       )}
@@ -2940,21 +3687,23 @@ function DashboardInner() {
           />
 
           {/* Filter pills */}
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
-            {['all','amazon','paypal','restaurant','takeaway','grocery','health','transport','toll','sub'].map(cat => (
+          <div className="cat-filter-wrap">
+          <div className="cat-filter-row">
+            {['all','grocery','restaurant','takeaway','coffee','delivery','alcohol','transport','fuel','toll','parking','car','home','utilities','telco','insurance','health','fitness','personal_care','clothing','education','school','childcare','kids','sub','bnpl','gifts','charity','strata','travel','gambling','cash','government','mortgage','rent','transfer'].map(cat => (
               <button key={cat} onClick={e => { e.stopPropagation(); setSearchCat(cat); }}
-                style={{ padding: "5px 12px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: "inherit",
+                style={{ padding: "5px 12px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: "inherit", whiteSpace: "nowrap",
                   background: searchCat === cat ? "rgba(96,165,250,0.2)" : "rgba(255,255,255,0.05)",
                   color: searchCat === cat ? "#93c5fd" : "#64748b" }}>
-                {cat === 'all' ? 'All' : cat.charAt(0).toUpperCase() + cat.slice(1)}
+                {cat === 'all' ? 'All' : cat.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
               </button>
             ))}
             <button onClick={e => { e.stopPropagation(); setSearchCat(searchCat === 'other' ? 'all' : 'other'); }}
-              style={{ padding: "5px 12px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: "inherit",
+              style={{ padding: "5px 12px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: "inherit", whiteSpace: "nowrap",
                 background: searchCat === 'other' ? "rgba(248,113,113,0.2)" : "rgba(255,255,255,0.05)",
                 color: searchCat === 'other' ? "#f87171" : "#64748b" }}>
               Uncategorised
             </button>
+          </div>
           </div>
 
           {/* Uncategorised helper hint */}
@@ -3229,6 +3978,26 @@ function DashboardInner() {
 
       {/* ═══ SETTINGS ═══ */}
       {tab === "settings" && (<div>
+
+        {/* ── Account ── */}
+        <AuthSection
+          authUser={authUser}
+          userTier={userTier}
+          authView={authView}
+          authLoading={authLoading}
+          authError={authError}
+          authSuccess={authSuccess}
+          lastSynced={lastSynced}
+          syncStatus={syncStatus}
+          showForgotPw={showForgotPw}
+          onSetAuthView={v => { setAuthView(v); setAuthError(''); setAuthSuccess(''); setShowForgotPw(false); }}
+          onSignUp={handleAuthSignUp}
+          onSignIn={handleAuthSignIn}
+          onSignOut={handleAuthSignOut}
+          onSyncNow={handleSyncNow}
+          onSetShowForgotPw={setShowForgotPw}
+          onChangePassword={handleChangePassword}
+        />
 
         {/* Drop zone */}
         <div
@@ -3525,10 +4294,6 @@ function DashboardInner() {
     </div>
   );
 }
-
-// ─── PIN GATE ─────────────────────────────────────────────────────────────────
-// TODO: Replace with proper authentication (Supabase Auth in Week 2)
-// For now, bypass PIN check — demo mode doesn't need it
 
 export default function Dashboard() {
   return <DashboardInner />;

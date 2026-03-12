@@ -16,3 +16,43 @@ input[type=range]::-moz-range-thumb {
   cursor: pointer;
   border: 2px solid #0b0b17;
 }
+
+/* ── Category filter row ── */
+.cat-filter-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+@media (max-width: 640px) {
+  .cat-filter-row {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 6px;
+    /* hide scrollbar */
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .cat-filter-row::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Subtle right-edge fade hint (mobile only) */
+.cat-filter-wrap {
+  position: relative;
+  overflow: hidden;
+}
+@media (max-width: 640px) {
+  .cat-filter-wrap::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 40px;
+    height: 100%;
+    background: linear-gradient(to right, transparent, #0b0b17);
+    pointer-events: none;
+  }
+}
