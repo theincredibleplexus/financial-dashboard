@@ -650,6 +650,8 @@ const UpgradeModal = ({ onClose, userTier, authUser }) => {
 const CAT_COLORS={grocery:'#34d399',restaurant:'#fb923c',takeaway:'#f97316',coffee:'#a78bfa',delivery:'#60a5fa',alcohol:'#f59e0b',transport:'#38bdf8',fuel:'#facc15',toll:'#94a3b8',parking:'#78716c',car:'#64748b',utilities:'#a8a29e',telco:'#6ee7b7',insurance:'#93c5fd',sub:'#c084fc',health:'#f472b6',fitness:'#86efac',personal_care:'#e879f9',education:'#67e8f9',school:'#22d3ee',childcare:'#f9a8d4',clothing:'#fca5a5',home:'#fde68a',kids:'#bef264',gifts:'#fb923c',bnpl:'#a3e635',charity:'#4ade80',strata:'#94a3b8',pets:'#bbf7d0',travel:'#7dd3fc',gambling:'#fb7185',government:'#94a3b8',cash:'#9ca3af',mortgage:'#94a3b8',rent:'#94a3b8',amazon:'#f97316',paypal:'#3b82f6',shopping:'#e879f9',personal:'#475569',other:'#475569',grocery_delivery:'#6ee7b7'};
 const ALL_CATS=['grocery','restaurant','takeaway','coffee','delivery','alcohol','transport','fuel','toll','parking','car','home','utilities','telco','insurance','health','fitness','personal_care','clothing','education','school','childcare','kids','sub','bnpl','gifts','charity','strata','travel','gambling','cash','government','mortgage','rent','transfer','other'];
 
+const DEFAULT_PREFERENCES = { hiddenCategories: ['gambling'], showGambling: false, showCents: false, weekStart: 'monday' };
+
 
 const Card=({label,value,type,detail})=>(<div style={{padding:"9px 11px",borderRadius:10,background:type==="in"?"rgba(52,211,153,0.04)":"rgba(248,113,113,0.04)",border:`1px solid ${type==="in"?"rgba(52,211,153,0.08)":"rgba(248,113,113,0.08)"}`}}><div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,fontWeight:600,color:"#cbd5e1"}}>{label}</span><span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:700,fontSize:13,color:type==="in"?"#34d399":"#f87171"}}>{type==="in"?"+":"−"}{value}</span></div><div style={{fontSize:10,color:"#475569",marginTop:2}}>{detail}</div></div>);
 const xP={tick:{fill:"#64748b",fontSize:11},axisLine:{stroke:"rgba(255,255,255,0.05)"}};
@@ -697,8 +699,8 @@ const NW_NOW    = NW_ASSETS - NW_DEBT;
 const tabGroups=[
   {label:"Summary",  tabs:[{id:"overview",l:"📊 Overview"},{id:"planner",l:"🎛️ Planner"}]},
   {label:"Assets",   tabs:[{id:"networth",l:"💰 Net Worth"},{id:"property",l:"🏠 Property"}]},
-  {label:"Spending", tabs:[{id:"committed",l:"📌 Committed"},{id:"health",l:"💊 Health"},{id:"variable",l:"🛒 Variable"},{id:"paypal",l:"💳 PayPal"},{id:"savings",l:"🏦 Savings"}]},
-  {label:"Insights", tabs:[{id:"insights",l:"💡 Insights"},{id:"deep",l:"🔬 Deep Dive"},{id:"trend",l:"📉 Trend"},{id:"subs",l:"📱 Subs"},{id:"heatmap",l:"📅 Heatmap"},{id:"search",l:"🔍 Search"}]},
+  {label:"Spending", tabs:[{id:"committed",l:"📌 Committed"},{id:"categories",l:"🛒 Categories"},{id:"health",l:"💊 Health"},{id:"subscriptions",l:"📱 Subscriptions"},{id:"savings",l:"🏦 Savings"}]},
+  {label:"Insights", tabs:[{id:"insights",l:"💡 Insights"},{id:"deep",l:"🔬 Deep Dive"},{id:"trend",l:"📉 Trend"},{id:"heatmap",l:"📅 Heatmap"},{id:"search",l:"🔍 Search"}]},
   {label:"Planning", tabs:[{id:"goals",l:"🎯 Goals"},{id:"tax",l:"💸 Tax"},{id:"compare",l:"⚖️ Compare"},{id:"growth",l:"🌱 Growth"}]},
   {label:"System",   tabs:[{id:"settings",l:"⚙️ Settings"}]},
 ];
@@ -1279,154 +1281,282 @@ function AuthSection({
   return null;
 }
 
-// ─── WELCOME SCREEN ───────────────────────────────────────────────────────────
-function WelcomeScreen({ onLaunchDemo, onUploadFiles }) {
-  const [dropActive, setDropActive] = useState(false);
-  const welcomeFileRef = useRef(null);
+// ─── FIRST UPLOAD REVEAL ──────────────────────────────────────────────────────
+const REVEAL_CAT_LABELS = {
+  grocery: 'Groceries', restaurant: 'Dining out', takeaway: 'Takeaway',
+  health: 'Health', sub: 'Subscriptions', amazon: 'Amazon',
+  delivery: 'Delivery', toll: 'Tolls', coffee: 'Coffee', other: 'Other',
+  transport: 'Transport', entertainment: 'Entertainment', clothing: 'Clothing',
+  education: 'Education', travel: 'Travel', utilities: 'Utilities',
+};
+
+function computeRevealData(parsedData) {
+  const txCount      = parsedData.rowCount || 0;
+  const monthCount   = parsedData.pnl?.length || 0;
+  const totalIncome  = Math.round(parsedData.pnl?.reduce((s, r) => s + r.i, 0) || 0);
+  const totalSpending= Math.round(parsedData.pnl?.reduce((s, r) => s + r.s, 0) || 0);
+  const catTotals    = {};
+  if (parsedData.rawTxs) {
+    for (const tx of parsedData.rawTxs) {
+      if (!tx.isIncome) catTotals[tx.cat] = (catTotals[tx.cat] || 0) + tx.absAmt;
+    }
+  }
+  const topCats = Object.entries(catTotals)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([cat, amt]) => ({ cat, amt: Math.round(amt) }));
+  return { txCount, monthCount, totalIncome, totalSpending, topCats };
+}
+
+function FirstUploadReveal({ data, onDismiss }) {
+  const [counts, setCounts] = useState({
+    txCount: 0, monthCount: 0, income: 0, spending: 0,
+    cats: data.topCats.map(() => 0),
+  });
+
+  useEffect(() => {
+    const start = performance.now();
+    const duration = 500;
+    let raf;
+    function frame(now) {
+      const raw = Math.min((now - start) / duration, 1);
+      const t   = 1 - Math.pow(1 - raw, 3); // ease-out cubic
+      setCounts({
+        txCount:   Math.round(data.txCount * t),
+        monthCount:Math.round(data.monthCount * t),
+        income:    Math.round(data.totalIncome * t),
+        spending:  Math.round(data.totalSpending * t),
+        cats:      data.topCats.map(c => Math.round(c.amt * t)),
+      });
+      if (raw < 1) raf = requestAnimationFrame(frame);
+    }
+    const id = setTimeout(() => { raf = requestAnimationFrame(frame); }, 80);
+    return () => { clearTimeout(id); cancelAnimationFrame(raf); };
+  }, []);
+
+  return (
+    <div style={{ position:'fixed', inset:0, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(7,8,15,0.88)', zIndex:9999 }}>
+      <div style={{ maxWidth:420, width:'calc(100vw - 32px)', background:'#0c0e1a', borderRadius:20, border:'1px solid rgba(255,255,255,0.08)', padding:'36px 32px 28px', boxShadow:'0 24px 80px rgba(0,0,0,0.6)', display:'flex', flexDirection:'column', alignItems:'center' }}>
+
+        {/* Logo mark */}
+        <div style={{ width:52, height:52, background:'linear-gradient(135deg,#6366f1,#8b5cf6)', borderRadius:14, display:'flex', alignItems:'center', justifyContent:'center', fontSize:30, fontWeight:700, color:'#fff', lineHeight:1, paddingTop:5, userSelect:'none', marginBottom:16 }}>,</div>
+
+        <h2 style={{ margin:'0 0 4px', fontSize:22, fontWeight:700, color:'#f1f5f9', textAlign:'center', fontFamily:"'Playfair Display',Georgia,serif" }}>Your data is in</h2>
+        <p style={{ margin:'0 0 24px', fontSize:13, color:'#64748b', textAlign:'center' }}>Here's what Comma found</p>
+
+        {/* Animated stat rows */}
+        <div style={{ width:'100%', display:'flex', flexDirection:'column', gap:10, marginBottom:20 }}>
+          {[
+            { label:'Transactions found', val: counts.txCount.toLocaleString(),       color:'#e2e8f0' },
+            { label:'Months of history',  val: counts.monthCount,                     color:'#e2e8f0' },
+            { label:'Total income',       val:`$${counts.income.toLocaleString()}`,   color:'#34d399' },
+            { label:'Total spending',     val:`$${counts.spending.toLocaleString()}`, color:'#f87171' },
+          ].map(({ label, val, color }) => (
+            <div key={label} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', background:'rgba(255,255,255,0.03)', borderRadius:10, padding:'10px 14px' }}>
+              <span style={{ fontSize:13, color:'#94a3b8' }}>{label}</span>
+              <span style={{ fontSize:14, fontWeight:700, color, fontFamily:'JetBrains Mono,monospace', minWidth:70, textAlign:'right' }}>{val}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Top categories */}
+        {data.topCats.length > 0 && (
+          <div style={{ width:'100%', marginBottom:24 }}>
+            <div style={{ fontSize:11, fontWeight:600, color:'#475569', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>Top categories</div>
+            {data.topCats.map((c, i) => (
+              <div key={c.cat} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'7px 0', borderBottom: i < data.topCats.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
+                <span style={{ fontSize:13, color:'#94a3b8' }}>{REVEAL_CAT_LABELS[c.cat] || c.cat}</span>
+                <span style={{ fontSize:13, fontWeight:600, color:'#e2e8f0', fontFamily:'JetBrains Mono,monospace' }}>${counts.cats[i].toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* CTA */}
+        <button onClick={onDismiss} style={{ width:'100%', padding:'13px', background:'linear-gradient(135deg,#6366f1,#8b5cf6)', border:'none', borderRadius:12, color:'#fff', fontSize:14, fontWeight:600, fontFamily:'inherit', cursor:'pointer', marginBottom:8 }}>
+          See your dashboard →
+        </button>
+        <button onClick={onDismiss} style={{ background:'none', border:'none', color:'#475569', fontSize:12, cursor:'pointer', fontFamily:'inherit', padding:'4px 8px' }}>
+          Skip
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── ONBOARDING MODAL ─────────────────────────────────────────────────────────
+function OnboardingModal({ onExploreDemo, onUploadCSV, onSignIn, onSignUp, authLoading, authError, onClearError }) {
+  const [view,        setView]        = useState('welcome'); // 'welcome' | 'signin' | 'signup'
+  const [email,       setEmail]       = useState('');
+  const [password,    setPassword]    = useState('');
+  const [confirmPw,   setConfirmPw]   = useState('');
+  const [understood,  setUnderstood]  = useState(false);
+  const [showPw,      setShowPw]      = useState(false);
+  const [showForgotPw,setShowForgotPw]= useState(false);
+
+  const switchView = (v) => {
+    setView(v);
+    setEmail(''); setPassword(''); setConfirmPw('');
+    setUnderstood(false); setShowPw(false); setShowForgotPw(false);
+    onClearError();
+  };
+
+  const pwStrength = passwordStrength(password);
+  const pwMatch    = password === confirmPw && confirmPw.length > 0;
+  const canSignUp  = email && password.length >= 8 && pwMatch && understood;
+
+  const inputStyle = {
+    width: '100%', boxSizing: 'border-box',
+    padding: '11px 14px', borderRadius: 10,
+    border: '1px solid rgba(255,255,255,0.09)',
+    background: 'rgba(0,0,0,0.25)',
+    color: '#cbd5e1', fontSize: 13,
+    fontFamily: 'inherit', outline: 'none',
+    marginBottom: 10,
+  };
+  const btnPrimary = (disabled) => ({
+    width: '100%', padding: '13px 0', borderRadius: 12,
+    border: 'none', cursor: disabled ? 'not-allowed' : 'pointer',
+    background: disabled ? 'rgba(99,102,241,0.2)' : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+    color: disabled ? '#475569' : '#fff',
+    fontSize: 14, fontWeight: 600, fontFamily: 'inherit',
+    opacity: disabled ? 0.6 : 1, marginTop: 4,
+  });
+  const backLink = (label, to) => (
+    <button
+      onClick={() => switchView(to)}
+      style={{ background:'none', border:'none', color:'#64748b', fontSize:12, cursor:'pointer', padding:'0 0 20px', fontFamily:'inherit', display:'flex', alignItems:'center', gap:4, alignSelf:'flex-start' }}
+      onMouseOver={e => e.currentTarget.style.color = '#94a3b8'}
+      onMouseOut={e => e.currentTarget.style.color = '#64748b'}
+    >
+      ← {label}
+    </button>
+  );
+
+  const logoMark = (
+    <div style={{
+      width: 52, height: 52,
+      background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+      borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: 30, fontWeight: 700, color: '#fff', lineHeight: 1, paddingTop: 5,
+      userSelect: 'none', marginBottom: 18,
+    }}>,</div>
+  );
 
   return (
     <div style={{
-      fontFamily: "'Instrument Sans', -apple-system, sans-serif",
-      background: "#0b0b17",
-      color: "#e2e8f0",
-      minHeight: "100vh",
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "center",
-      padding: "48px 24px",
+      position: 'fixed', inset: 0, display: 'flex',
+      alignItems: 'center', justifyContent: 'center',
+      background: 'rgba(7,8,15,0.75)', zIndex: 9999,
     }}>
-      <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
-
-      {/* Logo */}
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 52 }}>
-        <div style={{
-          width: 60, height: 60,
-          background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
-          borderRadius: 18,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 34, fontWeight: 700, color: "#fff",
-          marginBottom: 18,
-          boxShadow: "0 8px 32px rgba(99,102,241,0.35)",
-          lineHeight: 1,
-          paddingTop: 6,
-          userSelect: "none",
-        }}>
-          ,
-        </div>
-        <h1 style={{ margin: 0, fontSize: 30, fontWeight: 700, color: "#f1f5f9", letterSpacing: "-0.02em" }}>Comma</h1>
-        <p style={{ margin: "10px 0 0", fontSize: 14, color: "#475569", textAlign: "center", maxWidth: 340, lineHeight: 1.65 }}>
-          Your personal finance dashboard — built for Australian households
-        </p>
-      </div>
-
-      {/* Two cards */}
       <div style={{
-        display: "flex",
-        gap: 16,
-        width: "100%",
-        maxWidth: 740,
-        flexWrap: "wrap",
-        justifyContent: "center",
-        marginBottom: 36,
+        maxWidth: 420, width: 'calc(100vw - 32px)',
+        background: '#0c0e1a', borderRadius: 20,
+        border: '1px solid rgba(255,255,255,0.08)',
+        padding: 40, boxShadow: '0 24px 80px rgba(0,0,0,0.6)',
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
       }}>
 
-        {/* Card A — Demo */}
-        <div style={{
-          flex: "1 1 290px",
-          background: "rgba(255,255,255,0.025)",
-          border: "1px solid rgba(255,255,255,0.07)",
-          borderRadius: 20,
-          padding: "32px 28px",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "flex-start",
-          gap: 10,
-        }}>
-          <div style={{ fontSize: 30 }}>📊</div>
-          <div style={{ fontSize: 17, fontWeight: 700, color: "#f1f5f9", lineHeight: 1.3 }}>Explore with demo data</div>
-          <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.65 }}>
-            See what Comma can do with realistic Australian financial data
+        {/* ── Welcome view ── */}
+        {view === 'welcome' && (<>
+          {logoMark}
+          <h1 style={{ margin:'0 0 8px', fontFamily:"'Playfair Display', Georgia, serif", fontSize:28, fontWeight:700, color:'#f1f5f9', textAlign:'center', letterSpacing:'-0.01em' }}>
+            Welcome to Comma
+          </h1>
+          <p style={{ margin:'0 0 24px', fontSize:14, color:'#8b95b8', textAlign:'center', lineHeight:1.5 }}>
+            Your privacy-first Australian finance dashboard
+          </p>
+          <div style={{ width:'100%', display:'flex', flexDirection:'column', gap:10 }}>
+            <button onClick={onExploreDemo} style={btnPrimary(false)} onMouseOver={e=>e.currentTarget.style.opacity='0.85'} onMouseOut={e=>e.currentTarget.style.opacity='1'}>
+              Explore with demo data
+            </button>
+            <button
+              onClick={onUploadCSV}
+              style={{ width:'100%', padding:'13px', background:'transparent', border:'1px solid rgba(255,255,255,0.12)', borderRadius:12, color:'#fff', fontSize:14, fontWeight:600, fontFamily:'inherit', cursor:'pointer', transition:'opacity 0.15s' }}
+              onMouseOver={e=>e.currentTarget.style.opacity='0.75'} onMouseOut={e=>e.currentTarget.style.opacity='1'}
+            >
+              Upload your bank CSV
+            </button>
+            <button
+              onClick={() => switchView('signin')}
+              style={{ background:'none', border:'none', color:'#8b95b8', fontSize:13, fontFamily:'inherit', cursor:'pointer', padding:'6px 0', textAlign:'center', marginTop:4 }}
+              onMouseOver={e=>e.currentTarget.style.color='#a5b0cc'} onMouseOut={e=>e.currentTarget.style.color='#8b95b8'}
+            >
+              Sign in
+            </button>
           </div>
-          <div style={{ flex: 1, minHeight: 16 }} />
-          <button
-            onClick={onLaunchDemo}
-            style={{
-              marginTop: 4,
-              padding: "12px 28px",
-              background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
-              border: "none",
-              borderRadius: 10,
-              color: "#fff",
-              fontSize: 14,
-              fontWeight: 600,
-              fontFamily: "inherit",
-              cursor: "pointer",
-              boxShadow: "0 4px 16px rgba(99,102,241,0.28)",
-              transition: "opacity 0.15s",
-            }}
-            onMouseOver={e => e.currentTarget.style.opacity = '0.85'}
-            onMouseOut={e => e.currentTarget.style.opacity = '1'}
-          >
-            Launch Demo
-          </button>
-        </div>
+          <p style={{ margin:'20px 0 0', fontSize:11, color:'#5a6280', textAlign:'center', lineHeight:1.5 }}>
+            Works with CBA, NAB, ANZ, Westpac, Up Bank, Macquarie, and more
+          </p>
+        </>)}
 
-        {/* Card B — Upload */}
-        <div style={{
-          flex: "1 1 290px",
-          background: "rgba(255,255,255,0.025)",
-          border: "1px solid rgba(255,255,255,0.07)",
-          borderRadius: 20,
-          padding: "32px 28px",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "flex-start",
-          gap: 10,
-        }}>
-          <div style={{ fontSize: 30 }}>🏦</div>
-          <div style={{ fontSize: 17, fontWeight: 700, color: "#f1f5f9", lineHeight: 1.3 }}>Upload your bank CSV</div>
-          <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.65 }}>
-            Drag in your bank export and see your own finances in seconds
+        {/* ── Sign in view ── */}
+        {view === 'signin' && (<>
+          {backLink('Back', 'welcome')}
+          {logoMark}
+          <h2 style={{ margin:'0 0 20px', fontSize:22, fontWeight:700, color:'#f1f5f9', alignSelf:'flex-start' }}>Sign in</h2>
+          <div style={{ width:'100%' }}>
+            <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" style={inputStyle} autoComplete="email" />
+            <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Password" style={inputStyle} autoComplete="current-password" />
+            {authError && <div style={{ marginBottom:10, fontSize:12, color:'#f87171' }}>{authError}</div>}
+            <button onClick={() => onSignIn(email, password)} disabled={!email || !password || authLoading} style={btnPrimary(!email || !password || authLoading)}>
+              {authLoading ? 'Signing in…' : 'Sign in'}
+            </button>
+            <button
+              onClick={() => setShowForgotPw(v => !v)}
+              style={{ background:'none', border:'none', color:'#64748b', fontSize:12, cursor:'pointer', padding:'12px 0 0', fontFamily:'inherit', display:'block' }}
+            >Forgot password?</button>
+            {showForgotPw && (
+              <div style={{ marginTop:8, padding:'10px 14px', borderRadius:10, background:'rgba(248,113,113,0.05)', border:'1px solid rgba(248,113,113,0.15)', fontSize:12, color:'#94a3b8', lineHeight:1.7 }}>
+                Password reset is disabled because your password is your encryption key. If you've forgotten it, your encrypted data cannot be recovered. You can create a new account and start fresh.
+              </div>
+            )}
+            <button
+              onClick={() => switchView('signup')}
+              style={{ background:'none', border:'none', color:'#818cf8', fontSize:13, cursor:'pointer', padding:'16px 0 0', fontFamily:'inherit', display:'block', fontWeight:600 }}
+              onMouseOver={e=>e.currentTarget.style.color='#a5b4fc'} onMouseOut={e=>e.currentTarget.style.color='#818cf8'}
+            >
+              Create account instead →
+            </button>
           </div>
-          {/* Drop zone */}
-          <div
-            onDragOver={e => { e.preventDefault(); setDropActive(true); }}
-            onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDropActive(false); }}
-            onDrop={e => { e.preventDefault(); setDropActive(false); if (e.dataTransfer.files.length) onUploadFiles(e.dataTransfer.files); }}
-            onClick={() => welcomeFileRef.current?.click()}
-            style={{
-              width: "100%",
-              border: `1.5px dashed ${dropActive ? 'rgba(99,102,241,0.6)' : 'rgba(255,255,255,0.12)'}`,
-              borderRadius: 12,
-              padding: "22px 16px",
-              textAlign: "center",
-              cursor: "pointer",
-              background: dropActive ? "rgba(99,102,241,0.06)" : "rgba(255,255,255,0.015)",
-              transition: "border-color 0.2s, background 0.2s",
-              boxSizing: "border-box",
-              marginTop: 4,
-            }}
-          >
-            <input
-              ref={welcomeFileRef}
-              type="file"
-              accept=".csv"
-              multiple
-              style={{ display: "none" }}
-              onChange={e => { if (e.target.files.length) onUploadFiles(e.target.files); e.target.value = ''; }}
-            />
-            <div style={{ fontSize: 22, marginBottom: 8, opacity: 0.3 }}>⬆</div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0", marginBottom: 4 }}>Drop CSV here</div>
-            <div style={{ fontSize: 11, color: "#475569" }}>or click to browse · auto-detects format</div>
+        </>)}
+
+        {/* ── Create account view ── */}
+        {view === 'signup' && (<>
+          {backLink('Back to sign in', 'signin')}
+          {logoMark}
+          <h2 style={{ margin:'0 0 16px', fontSize:22, fontWeight:700, color:'#f1f5f9', alignSelf:'flex-start' }}>Create account</h2>
+          <div style={{ width:'100%' }}>
+            {/* Encryption warning */}
+            <div style={{ marginBottom:14, padding:'10px 14px', borderRadius:10, background:'rgba(251,191,36,0.06)', border:'1px solid rgba(251,191,36,0.2)', fontSize:12, color:'#fbbf24', lineHeight:1.7 }}>
+              Your password encrypts your data. If you forget it, your data cannot be recovered.
+            </div>
+            <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" style={inputStyle} autoComplete="email" />
+            <div style={{ position:'relative', marginBottom:10 }}>
+              <input type={showPw?'text':'password'} value={password} onChange={e=>setPassword(e.target.value)} placeholder="Password" style={{...inputStyle, marginBottom:0, paddingRight:38}} autoComplete="new-password" />
+              <button onClick={()=>setShowPw(v=>!v)} style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', color:'#475569', cursor:'pointer', fontSize:13, padding:0, lineHeight:1 }}>{showPw?'🙈':'👁'}</button>
+            </div>
+            {password && (
+              <div style={{ marginBottom:10 }}>
+                <div style={{ height:3, borderRadius:2, background:'rgba(255,255,255,0.06)', marginBottom:4 }}>
+                  <div style={{ height:'100%', borderRadius:2, background:pwStrength.color, width:pwStrength.width, transition:'width 0.2s, background 0.2s' }} />
+                </div>
+                <div style={{ fontSize:11, color:pwStrength.color }}>{pwStrength.label}</div>
+              </div>
+            )}
+            <input type="password" value={confirmPw} onChange={e=>setConfirmPw(e.target.value)} placeholder="Confirm password" style={{...inputStyle, borderColor: confirmPw && !pwMatch ? 'rgba(248,113,113,0.4)' : 'rgba(255,255,255,0.09)'}} autoComplete="new-password" />
+            {confirmPw && !pwMatch && <div style={{ fontSize:11, color:'#f87171', marginTop:-8, marginBottom:10 }}>Passwords don't match</div>}
+            <label style={{ display:'flex', alignItems:'flex-start', gap:8, marginBottom:14, cursor:'pointer' }}>
+              <input type="checkbox" checked={understood} onChange={e=>setUnderstood(e.target.checked)} style={{ marginTop:2, flexShrink:0 }} />
+              <span style={{ fontSize:12, color:'#64748b', lineHeight:1.6 }}>I understand my password cannot be recovered</span>
+            </label>
+            {authError && <div style={{ marginBottom:10, fontSize:12, color:'#f87171' }}>{authError}</div>}
+            <button onClick={() => onSignUp(email, password)} disabled={!canSignUp || authLoading} style={btnPrimary(!canSignUp || authLoading)}>
+              {authLoading ? 'Creating account…' : 'Create Account'}
+            </button>
           </div>
-        </div>
+        </>)}
 
-      </div>
-
-      {/* Bank compatibility */}
-      <div style={{ fontSize: 12, color: "#2d3748", textAlign: "center" }}>
-        Works with CBA, NAB, ANZ, Westpac, Up Bank, Macquarie, and more
       </div>
     </div>
   );
@@ -1497,6 +1627,7 @@ function DashboardInner() {
 
   // ─── UPLOAD STATE ─────────────────────────────────────────────────────────
   const fileInputRef = useRef(null);
+  const settingsSectionRefs = useRef({});
   const [dropActive,    setDropActive]    = useState(false);
   const [confirmClear,  setConfirmClear]  = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState(() => {
@@ -1516,16 +1647,21 @@ function DashboardInner() {
   const [showCatHint,    setShowCatHint]    = useState(() => {
     try { return !localStorage.getItem('comma_categorise_hint_dismissed'); } catch { return true; }
   });
+  const [catPeriod,      setCatPeriod]      = useState('3mo');
+  const [catPayMethod,   setCatPayMethod]   = useState('all');
+  const [catExpanded,    setCatExpanded]    = useState(null);
   const [firstRecatDone, setFirstRecatDone] = useState(() => {
     try { return !!localStorage.getItem('comma_first_recat_done'); } catch { return false; }
   });
-  const [showWelcome,    setShowWelcome]    = useState(() => {
+  const [showOnboarding, setShowOnboarding] = useState(() => {
     try {
       if (localStorage.getItem('comma_onboarded')) return false;
       const stored = JSON.parse(localStorage.getItem('comma_uploaded_data') || '[]');
       return stored.length === 0;
     } catch { return true; }
   });
+  const [showReveal,    setShowReveal]    = useState(false);
+  const [revealData,    setRevealData]    = useState(null);
 
   useEffect(() => {
     const h = () => setIsMobile(window.innerWidth < 768);
@@ -1616,10 +1752,30 @@ function DashboardInner() {
   const deleteUserRule = (pattern)            => setUserRules(prev => { const n = { ...prev }; delete n[pattern]; return n; });
   const getUserRules   = ()                   => userRules;
 
+  const [preferences, setPreferences] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('comma_preferences') || 'null');
+      return saved ? { ...DEFAULT_PREFERENCES, ...saved } : DEFAULT_PREFERENCES;
+    } catch { return DEFAULT_PREFERENCES; }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('comma_preferences', JSON.stringify(preferences));
+    queueSync('preferences', preferences);
+  }, [preferences]);
+
+  const toggleHiddenCat = (cat) => setPreferences(prev => {
+    const hidden = prev.hiddenCategories.includes(cat)
+      ? prev.hiddenCategories.filter(c => c !== cat)
+      : [...prev.hiddenCategories, cat];
+    return { ...prev, hiddenCategories: hidden };
+  });
+
   const [showImportRules, setShowImportRules] = useState(false);
   const [importRulesText, setImportRulesText] = useState('');
   const [importRulesStatus, setImportRulesStatus] = useState(null); // {ok:bool, msg:string}
   const [hoverDay, setHoverDay] = useState(null); // heatmap hover state
+  const [settingsActiveSection, setSettingsActiveSection] = useState('data');
 
   // ─── AUTH STATE ──────────────────────────────────────────────────────────
   const [authUser,          setAuthUser]          = useState(null);
@@ -1953,14 +2109,37 @@ function DashboardInner() {
             record = { ...record, originalRawTxs };
           }
         }
-        setUploadedFiles(prev => [...prev, record]);
+        setUploadedFiles(prev => {
+          const isFirstBank =
+            !localStorage.getItem('comma_reveal_shown') &&
+            (record.type === 'bank' || record.type === 'upbank') &&
+            record.status === 'success' &&
+            record.parsedData &&
+            prev.filter(f => (f.type === 'bank' || f.type === 'upbank') && f.status === 'success').length === 0;
+          if (isFirstBank) {
+            localStorage.setItem('comma_reveal_shown', 'true');
+            setRevealData(computeRevealData(record.parsedData));
+            setShowReveal(true);
+          }
+          return [...prev, record];
+        });
       };
       reader.readAsText(file);
     });
   };
 
   const handleMappingSuccess = (fileId, data) => {
-    setUploadedFiles(prev => prev.map(f => {
+    setUploadedFiles(prev => {
+      const isFirstBank =
+        !localStorage.getItem('comma_reveal_shown') &&
+        data &&
+        prev.filter(f => (f.type === 'bank' || f.type === 'upbank') && f.status === 'success').length === 0;
+      if (isFirstBank) {
+        localStorage.setItem('comma_reveal_shown', 'true');
+        setRevealData(computeRevealData(data));
+        setShowReveal(true);
+      }
+      return prev.map(f => {
       if (f.id !== fileId) return f;
       const originalRawTxs = data?.rawTxs;
       let parsedData = data;
@@ -1968,7 +2147,8 @@ function DashboardInner() {
         parsedData = aggregateTxs(applyUserRules(originalRawTxs, userRules));
       }
       return { ...f, status: 'success', type: 'bank', bankLabel: 'Unknown Bank', rowCount: parsedData.rowCount || 0, dateRange: parsedData.dateRange || null, parsedData, originalRawTxs };
-    }));
+      });
+    });
     setMappingFileId(null);
   };
 
@@ -2014,25 +2194,46 @@ function DashboardInner() {
     }
   }, [upData]);
 
+  // Intersection observer: highlight the settings mini-nav pill as user scrolls
+  useEffect(() => {
+    if (tab !== 'settings') return;
+    const refs = settingsSectionRefs.current;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries.filter(e => e.isIntersecting);
+        if (visible.length === 0) return;
+        // Pick the topmost visible section
+        const topmost = visible.reduce((a, b) =>
+          a.boundingClientRect.top < b.boundingClientRect.top ? a : b
+        );
+        const id = Object.keys(refs).find(k => refs[k] === topmost.target);
+        if (id) setSettingsActiveSection(id);
+      },
+      { rootMargin: '0px 0px -70% 0px', threshold: 0 }
+    );
+    Object.values(refs).forEach(el => { if (el) observer.observe(el); });
+    return () => observer.disconnect();
+  }, [tab]);
+
   const handleLaunchDemo = () => {
     localStorage.setItem('comma_onboarded', 'true');
-    setShowWelcome(false);
+    setShowOnboarding(false);
     setTab('overview');
   };
 
-  const handleWelcomeUpload = (fileList) => {
-    Array.from(fileList).forEach(file => {
-      const reader = new FileReader();
-      reader.onload = e => {
-        const record = processUploadedFile(file.name, e.target.result);
-        setUploadedFiles(prev => [...prev, record]);
-        localStorage.setItem('comma_onboarded', 'true');
-        setShowWelcome(false);
-        setTab('overview');
-      };
-      reader.readAsText(file);
-    });
+  const handleOnboardingUploadCSV = () => {
+    localStorage.setItem('comma_onboarded', 'true');
+    setShowOnboarding(false);
+    setTab('settings');
   };
+
+  // Auth success closes the onboarding modal automatically
+  useEffect(() => {
+    if (authUser && showOnboarding) {
+      localStorage.setItem('comma_onboarded', 'true');
+      setShowOnboarding(false);
+    }
+  }, [authUser, showOnboarding]);
 
   // ─── AUTH INIT ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -2178,6 +2379,7 @@ function DashboardInner() {
     balance_sheet:JSON.parse(localStorage.getItem('comma_balance_sheet')  || 'null'),
     user_rules:   JSON.parse(localStorage.getItem('comma_user_rules')     || '{}'),
     ai_config:    (() => { const c = JSON.parse(localStorage.getItem('comma_ai_config') || '{}'); const { apiKey: _, ...rest } = c; return rest; })(),
+    preferences:  JSON.parse(localStorage.getItem('comma_preferences')    || 'null'),
   });
 
   const encryptAndUploadAll = async (userId, password, salt) => {
@@ -2255,6 +2457,8 @@ function DashboardInner() {
         setUserRules(decrypted);
       } else if (dataType === 'ai_config') {
         saveAiConfig(decrypted);
+      } else if (dataType === 'preferences') {
+        setPreferences(prev => ({ ...DEFAULT_PREFERENCES, ...prev, ...decrypted }));
       }
     }
     // Cache key + salt for auto-sync
@@ -2656,6 +2860,51 @@ function DashboardInner() {
     return access[feature]?.includes(userTier) ?? false;
   };
 
+  // ─── CATEGORIES TAB DATA ──────────────────────────────────────────────────
+  const catData = useMemo(() => {
+    const detectPM = (desc) => {
+      if (/paypal/i.test(desc)) return 'paypal';
+      if (/afterpay|zippay|zip\s*co|laybuy|humm/i.test(desc)) return 'bnpl';
+      if (/\btransfer\b|bpay|pay.?anyone|osko/i.test(desc)) return 'transfer';
+      if (/\batm\b|cash\s*with/i.test(desc)) return 'cash';
+      return 'card';
+    };
+    const now = new Date();
+    const days = catPeriod === '1mo' ? 30 : catPeriod === '6mo' ? 180 : catPeriod === '12mo' ? 365 : 90;
+    const cutoff = new Date(now.getTime() - days * 86400000);
+    const recentCut = new Date(now.getTime() - 30 * 86400000);
+    const prevCut   = new Date(now.getTime() - 60 * 86400000);
+    const SKIP = new Set(['income', 'personal']);
+    const totals = {}, merchants = {}, recent = {}, prev = {};
+    transactions.forEach(tx => {
+      if (SKIP.has(tx.cat)) return;
+      const pm = detectPM(tx.desc);
+      if (catPayMethod !== 'all' && pm !== catPayMethod) return;
+      const txDate = new Date(tx.date);
+      const c = tx.cat || 'other';
+      const amt = tx.amount || 0;
+      if (txDate >= cutoff) {
+        totals[c] = (totals[c] || 0) + amt;
+        if (!merchants[c]) merchants[c] = {};
+        const key = tx.desc.replace(/[^\w ]/g, '').trim().slice(0, 32);
+        merchants[c][key] = (merchants[c][key] || 0) + amt;
+      }
+      if (txDate >= recentCut) recent[c] = (recent[c] || 0) + amt;
+      else if (txDate >= prevCut) prev[c] = (prev[c] || 0) + amt;
+    });
+    return Object.entries(totals)
+      .sort((a, b) => b[1] - a[1])
+      .map(([cat, total]) => {
+        const p = prev[cat] || 0;
+        const r = recent[cat] || 0;
+        const mom = p > 0 ? Math.round(((r - p) / p) * 100) : null;
+        const tops = Object.entries(merchants[cat] || {})
+          .sort((a, b) => b[1] - a[1]).slice(0, 5)
+          .map(([desc, amt]) => ({ desc, amt: Math.round(amt) }));
+        return { cat, total: Math.round(total), mom, tops };
+      });
+  }, [transactions, catPeriod, catPayMethod]);
+
   const SidebarContent = ({ onSelect }) => (
     <>
       {tabGroups.map(group => (
@@ -2669,11 +2918,12 @@ function DashboardInner() {
     </>
   );
 
-  if (showWelcome) return <WelcomeScreen onLaunchDemo={handleLaunchDemo} onUploadFiles={handleWelcomeUpload} />;
-
   return (
-    <div style={{ fontFamily: "'Instrument Sans',-apple-system,sans-serif", background: "#0b0b17", color: "#e2e8f0", minHeight: "100vh", display: "flex" }}>
-      <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <>
+    {showOnboarding && <OnboardingModal onExploreDemo={handleLaunchDemo} onUploadCSV={handleOnboardingUploadCSV} onSignIn={handleAuthSignIn} onSignUp={handleAuthSignUp} authLoading={authLoading} authError={authError} onClearError={() => { setAuthError(''); setAuthSuccess(''); }} />}
+    {showReveal && revealData && <FirstUploadReveal data={revealData} onDismiss={() => { setShowReveal(false); setTab('overview'); }} />}
+    <div style={{ fontFamily: "'Instrument Sans',-apple-system,sans-serif", background: "#0b0b17", color: "#e2e8f0", minHeight: "100vh", display: "flex", ...(showOnboarding ? { filter: 'blur(8px)', pointerEvents: 'none', userSelect: 'none' } : {}) }}>
+      <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet" />
       <style>{`input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#e2e8f0;cursor:pointer;border:2px solid #0b0b17;box-shadow:0 0 6px rgba(96,165,250,0.5)} input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#e2e8f0;cursor:pointer;border:2px solid #0b0b17}`}</style>
 
       {/* Upgrade modal */}
@@ -3432,26 +3682,69 @@ function DashboardInner() {
         </div>
       </div>)}
 
-      {/* ═══ VARIABLE ═══ */}
-      {tab === "variable" && (<div>
+      {/* ═══ CATEGORIES ═══ */}
+      {tab === "categories" && (<div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><St label="Discretionary" value={"$" + DISC.toLocaleString()} accent="#fbbf24" /><St label="Amz+PP" value={"$" + P.amazonRecentAvg} sub="Jan-Feb" accent="#34d399" /></div>
+        {/* Time period filter */}
+        <div style={{ display: "flex", gap: 5, flexWrap: "wrap", margin: "8px 0 4px" }}>
+          {[{id:'1mo',l:'This month'},{id:'3mo',l:'Last 3mo'},{id:'6mo',l:'Last 6mo'},{id:'12mo',l:'Last 12mo',pro:true}].map(p => {
+            const locked = p.pro && !canAccess('history_12mo');
+            return (<button key={p.id} onClick={() => !locked && setCatPeriod(p.id)} style={{ padding:"3px 9px", borderRadius:6, border:"none", cursor:locked?"default":"pointer", fontSize:10, fontWeight:600, fontFamily:"inherit", background:catPeriod===p.id?"rgba(99,102,241,0.22)":"rgba(255,255,255,0.03)", color:catPeriod===p.id?"#a5b4fc":locked?"#334155":"#64748b", opacity:locked?0.5:1 }}>{p.l}{p.pro && <span style={{ marginLeft:3, fontSize:8, color:"#a78bfa" }}>PRO</span>}</button>);
+          })}
+        </div>
+        {/* Payment method filter */}
+        <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 10 }}>
+          {[{id:'all',l:'All'},{id:'card',l:'💳 Card'},{id:'paypal',l:'🅿️ PayPal'},{id:'bnpl',l:'Afterpay/Zip'},{id:'transfer',l:'Transfer'},{id:'cash',l:'Cash'}].map(pm => (
+            <button key={pm.id} onClick={() => setCatPayMethod(pm.id)} style={{ padding:"3px 9px", borderRadius:6, border:"none", cursor:"pointer", fontSize:10, fontWeight:600, fontFamily:"inherit", background:catPayMethod===pm.id?"rgba(96,165,250,0.18)":"rgba(255,255,255,0.03)", color:catPayMethod===pm.id?"#93c5fd":"#64748b" }}>{pm.l}</button>
+          ))}
+        </div>
+        {/* Category breakdown */}
+        {catData.length === 0 ? (
+          <div style={{ textAlign:"center", padding:"36px 16px", color:"#475569", fontSize:12 }}>No transactions found for selected filters.</div>
+        ) : (() => {
+          const maxTotal = catData[0]?.total || 1;
+          const CAT_COLORS = {grocery:'#22c55e',grocery_delivery:'#4ade80',restaurant:'#ec4899',takeaway:'#f43f5e',coffee:'#f97316',amazon:'#fb923c',sub:'#6366f1',transport:'#60a5fa',fuel:'#facc15',toll:'#fbbf24',health:'#06b6d4',utilities:'#94a3b8',insurance:'#8b5cf6',personal_care:'#e879f9',education:'#34d399',clothing:'#a78bfa',shopping:'#fb923c',entertainment:'#38bdf8',travel:'#f472b6',other:'#475569'};
+          const CAT_LABELS = {grocery:'Groceries',grocery_delivery:'Grocery Delivery',restaurant:'Restaurants',takeaway:'Takeaway',coffee:'Coffee',amazon:'Amazon',sub:'Subscriptions',transport:'Transport',fuel:'Fuel',toll:'Tolls',health:'Health',utilities:'Utilities',insurance:'Insurance',personal_care:'Personal Care',education:'Education',clothing:'Clothing',shopping:'Shopping',entertainment:'Entertainment',travel:'Travel',other:'Other'};
+          return (<>
+            <Sec icon="📊">Spending by Category</Sec>
+            <div style={{ background:"rgba(255,255,255,0.015)", borderRadius:14, border:"1px solid rgba(255,255,255,0.045)", padding:"4px 10px" }}>
+              {catData.map((d) => {
+                const clr = CAT_COLORS[d.cat] || '#475569';
+                const label = CAT_LABELS[d.cat] || d.cat;
+                const isExp = catExpanded === d.cat;
+                return (<div key={d.cat}>
+                  <div onClick={() => setCatExpanded(isExp ? null : d.cat)} style={{ cursor:"pointer", padding:"7px 0" }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:5 }}>
+                      <div style={{ width:6, height:6, borderRadius:"50%", background:clr, flexShrink:0 }} />
+                      <span style={{ fontSize:11, color:"#e2e8f0", flex:1 }}>{label}</span>
+                      {d.mom !== null && (<span style={{ fontSize:9, fontWeight:700, color:d.mom > 0?"#f87171":"#34d399" }}>{d.mom > 0 ? "↑" : "↓"}{Math.abs(d.mom)}%</span>)}
+                      <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:11, color:"#cbd5e1" }}>${d.total.toLocaleString()}</span>
+                      <span style={{ fontSize:8, color:"#475569" }}>{isExp?"▲":"▼"}</span>
+                    </div>
+                    <div style={{ height:5, background:"rgba(255,255,255,0.04)", borderRadius:3, overflow:"hidden" }}>
+                      <div style={{ width:`${(d.total/maxTotal)*100}%`, height:"100%", background:clr, borderRadius:3, opacity:0.65 }} />
+                    </div>
+                  </div>
+                  {isExp && (<div style={{ padding:"4px 0 8px 13px", marginBottom:2 }}>
+                    {d.tops.length === 0
+                      ? <span style={{ fontSize:10, color:"#475569" }}>No merchant data</span>
+                      : d.tops.map((m, mi) => (<div key={mi} style={{ display:"flex", justifyContent:"space-between", padding:"2px 0", borderBottom:mi < d.tops.length-1?"1px solid rgba(255,255,255,0.02)":"none" }}>
+                          <span style={{ fontSize:10, color:"#94a3b8", flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{m.desc}</span>
+                          <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:10, color:"#cbd5e1", marginLeft:8 }}>${m.amt.toLocaleString()}</span>
+                        </div>))}
+                  </div>)}
+                </div>);
+              })}
+            </div>
+          </>);
+        })()}
+        {/* Food & Amazon charts (from Variable tab) */}
         <Sec icon="🍔">{`Food ($${P.foodMonthlyBudget}/mo)`}</Sec>
         <Ch height={180}><BarChart data={food.map(d => ({ month: d.m, restaurants: d.r, takeaway: d.t, groceries: d.g }))}>{gd}<XAxis dataKey="month" {...xP} /><YAxis {...yP} /><Tooltip content={<Tip />} /><Bar dataKey="restaurants" name="Restaurants" stackId="a" fill="#ec4899" barSize={22} /><Bar dataKey="takeaway" name="Takeaway" stackId="a" fill="#f43f5e" barSize={22} /><Bar dataKey="groceries" name="Groceries" stackId="a" fill="#22c55e" radius={[3, 3, 0, 0]} barSize={22} /></BarChart></Ch>
         <Sec icon="📦">{`Amazon ($${P.amazonRecentAvg} recent)`}</Sec>
         <Ch height={150}><BarChart data={amz.map(d => ({ month: d.m, amount: d.v }))}>{gd}<XAxis dataKey="month" {...xP} /><YAxis {...yP} /><Tooltip content={<Tip />} /><Bar dataKey="amount" name="Amazon" fill="#f97316" radius={[4, 4, 0, 0]} barSize={26} /></BarChart></Ch>
       </div>)}
 
-      {/* ═══ PAYPAL ═══ */}
-      {tab === "paypal" && (<div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><St label="Gross" value={"$" + P.ppGross.toLocaleString()} accent="#f87171" /><St label="Refunds" value={"-$" + P.ppRefunds.toLocaleString()} accent="#34d399" /><St label="Net" value={"$" + P.ppNet.toLocaleString()} accent="#fbbf24" /></div>
-        <Note color="#6366f1"><span style={{ color: "#6366f1", fontWeight: 700 }}>Decoded: </span>Mostly Pay in 4 repayments. Now cleared.</Note>
-        <Sec icon="📊">Purchases vs Pay in 4</Sec>
-        <Ch height={190}><BarChart data={ppM.map(d => ({ month: d.m, purchases: d.p, pi4: d.pi4 }))} margin={{ top: 5, right: 12, bottom: 5, left: 4 }}>{gd}<XAxis dataKey="month" {...xP} /><YAxis {...yP} /><Tooltip content={<Tip />} /><Bar dataKey="purchases" name="Purchases" stackId="a" fill="#6366f1" barSize={22} opacity={0.7} /><Bar dataKey="pi4" name="Pay in 4" stackId="a" fill="#a855f7" radius={[3, 3, 0, 0]} barSize={22} opacity={0.4} /></BarChart></Ch>
-        <Sec icon="📋">Categories</Sec>
-        <div style={{ background: "rgba(255,255,255,0.015)", borderRadius: 14, border: "1px solid rgba(255,255,255,0.045)", padding: 4 }}>
-          {ppCats.map((c, i) => (<div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "5px 10px", borderBottom: i < ppCats.length - 1 ? "1px solid rgba(255,255,255,0.025)" : "none" }}><div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 4, height: 4, borderRadius: "50%", background: c.c }} /><span style={{ fontSize: 11, color: "#e2e8f0" }}>{c.n}</span></div><span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: "#cbd5e1" }}>${c.t.toLocaleString()}</span></div>))}
-        </div>
-      </div>)}
 
       {/* ═══ SAVINGS ═══ */}
       {tab === "savings" && (<div>
@@ -3550,9 +3843,9 @@ function DashboardInner() {
         </>)}
       </div>)}
 
-      {/* ═══ SUBS ═══ */}
-      {/* TODO: Auto-detect subscriptions from uploaded transaction data using MERCHANT_MAP 'sub' patterns. Currently hardcoded. */}
-      {tab === "subs" && (<div>
+      {/* ═══ SUBSCRIPTIONS ═══ */}
+      {/* TODO: Auto-detect recurring charges from transaction data instead of hardcoded lists */}
+      {tab === "subscriptions" && (<div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><St label="Monthly" value={"$" + tSM.toFixed(0)} accent="#60a5fa" /><St label="Annual" value="~$62" sub="/mo" accent="#a78bfa" /></div>
         <Note color="#34d399"><span style={{ color: "#34d399", fontWeight: 700 }}>Cut: </span>Some subs cut. Saved $91/mo.</Note>
         <Sec icon="📅">Monthly</Sec>
@@ -4078,7 +4371,7 @@ function DashboardInner() {
           {/* Filter pills */}
           <div className="cat-filter-wrap">
           <div className="cat-filter-row">
-            {['all','grocery','restaurant','takeaway','coffee','delivery','alcohol','transport','fuel','toll','parking','car','home','utilities','telco','insurance','health','fitness','personal_care','clothing','education','school','childcare','kids','sub','bnpl','gifts','charity','strata','travel','gambling','cash','government','mortgage','rent','transfer'].map(cat => (
+            {['all','grocery','restaurant','takeaway','coffee','delivery','alcohol','transport','fuel','toll','parking','car','home','utilities','telco','insurance','health','fitness','personal_care','clothing','education','school','childcare','kids','sub','bnpl','gifts','charity','strata','travel','gambling','cash','government','mortgage','rent','transfer'].filter(cat => cat === 'all' || !preferences.hiddenCategories.includes(cat)).map(cat => (
               <button key={cat} onClick={e => { e.stopPropagation(); setSearchCat(cat); }}
                 style={{ padding: "5px 12px", borderRadius: 20, border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, fontFamily: "inherit", whiteSpace: "nowrap",
                   background: searchCat === cat ? "rgba(96,165,250,0.2)" : "rgba(255,255,255,0.05)",
@@ -4189,7 +4482,7 @@ function DashboardInner() {
                             RECATEGORISE · pattern: <span style={{ color: '#94a3b8', fontFamily: "'JetBrains Mono',monospace" }}>{extractMerchantPattern(tx.desc)}</span>
                           </div>
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                            {ALL_CATS.map(cat => {
+                            {ALL_CATS.filter(cat => !preferences.hiddenCategories.includes(cat)).map(cat => {
                               const c = CAT_COLORS[cat] || CAT_COLORS.other;
                               const isCurrent = tx.cat === cat;
                               return (
@@ -4220,142 +4513,179 @@ function DashboardInner() {
       {/* ═══ SETTINGS ═══ */}
       {tab === "settings" && (<div>
 
-        {/* ── Account ── */}
-        <AuthSection
-          authUser={authUser}
-          userTier={userTier}
-          authView={authView}
-          authLoading={authLoading}
-          authError={authError}
-          authSuccess={authSuccess}
-          lastSynced={lastSynced}
-          syncStatus={syncStatus}
-          showForgotPw={showForgotPw}
-          onSetAuthView={v => { setAuthView(v); setAuthError(''); setAuthSuccess(''); setShowForgotPw(false); }}
-          onSignUp={handleAuthSignUp}
-          onSignIn={handleAuthSignIn}
-          onSignOut={handleAuthSignOut}
-          onSyncNow={handleSyncNow}
-          onSetShowForgotPw={setShowForgotPw}
-          onChangePassword={handleChangePassword}
-        />
-
-        {userTier === 'free' && (
-          <ProBadge feature="Encrypted cloud sync" message="Upgrade to Pro for encrypted cloud sync across devices" isSignedIn={!!authUser} onUpgrade={() => setUpgradeOpen(true)} onSignIn={() => { setTab('settings'); setAuthView('signup'); setAuthError(''); setAuthSuccess(''); setShowForgotPw(false); }} />
-        )}
-
-        {/* Drop zone */}
-        <div
-          onDragOver={e => { e.preventDefault(); setDropActive(true); }}
-          onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDropActive(false); }}
-          onDrop={e => { e.preventDefault(); setDropActive(false); handleUploadedFiles(e.dataTransfer.files); }}
-          onClick={() => fileInputRef.current?.click()}
-          style={{
-            border: `2px dashed ${dropActive ? 'rgba(96,165,250,0.5)' : 'rgba(255,255,255,0.1)'}`,
-            borderRadius: 16,
-            padding: '48px 24px',
-            textAlign: 'center',
-            cursor: 'pointer',
-            background: dropActive ? 'rgba(96,165,250,0.04)' : 'rgba(255,255,255,0.01)',
-            transition: 'border-color 0.2s, background 0.2s',
-            marginBottom: 20,
-            userSelect: 'none',
-          }}
-        >
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv"
-            multiple
-            style={{ display: 'none' }}
-            onChange={e => { handleUploadedFiles(e.target.files); e.target.value = ''; }}
-          />
-          <div style={{ fontSize: 36, marginBottom: 12, opacity: 0.25 }}>⬆</div>
-          <div style={{ fontSize: 15, fontWeight: 600, color: '#e2e8f0', marginBottom: 6 }}>Drop your bank CSV files here</div>
-          <div style={{ fontSize: 12, color: '#475569' }}>or click to browse</div>
-          <div style={{ marginTop: 14, fontSize: 10, color: '#334155', lineHeight: 1.9 }}>
-            Up Bank · CommSec · PayPal · CBA · ANZ · NAB · Westpac · BankWest · Macquarie · St.George
-          </div>
-        </div>
-
-        {/* Per-file status chips */}
-        {uploadedFiles.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
-            {uploadedFiles.map(f => {
-              const isSuccess = f.status === 'success';
-              const isManual  = f.status === 'manual';
-              const accent    = isSuccess ? '#34d399' : isManual ? '#fbbf24' : '#f87171';
-              const icon      = isSuccess ? '✓' : isManual ? '⚠' : '✕';
-              const label     = isSuccess
-                ? `${f.bankLabel} — ${f.rowCount.toLocaleString()} ${f.dateRange ? 'transactions' : 'holdings'} loaded`
-                : isManual
-                  ? `${f.bankLabel} — unknown format, tap to map columns`
-                  : `Could not parse ${f.filename}`;
+        {/* ── Settings mini-nav ── */}
+        <div style={{
+          position: 'sticky',
+          top: isMobile ? 52 : 0,
+          zIndex: 50,
+          background: '#0b0b17',
+          marginLeft: isMobile ? -16 : -24,
+          marginRight: isMobile ? -16 : -24,
+          paddingLeft: isMobile ? 16 : 24,
+          paddingRight: isMobile ? 16 : 24,
+          paddingTop: 10,
+          paddingBottom: 12,
+          borderBottom: '1px solid rgba(255,255,255,0.05)',
+          marginBottom: 32,
+        }}>
+          <div style={{ display: 'flex', gap: 6, overflowX: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch' }}>
+            {[
+              { id: 'data',        icon: '📁', label: 'Data' },
+              { id: 'categories',  icon: '🏷️', label: 'Categories' },
+              { id: 'preferences', icon: '⚙️', label: 'Preferences' },
+              { id: 'ai',          icon: '🤖', label: 'AI' },
+              { id: 'account',     icon: '👤', label: 'Account' },
+              { id: 'about',       icon: 'ℹ️', label: 'About' },
+            ].map(s => {
+              const active = settingsActiveSection === s.id;
               return (
-                <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, background: `${accent}08`, border: `1px solid ${accent}18`, cursor: isManual ? 'pointer' : 'default' }}
-                  onClick={isManual ? () => setMappingFileId(f.id) : undefined}
-                >
-                  <span style={{ color: accent, fontWeight: 700, fontSize: 13, flexShrink: 0 }}>{icon}</span>
-                  <span style={{ fontSize: 12, color: '#cbd5e1', flex: 1 }}>{label}</span>
-                  <button
-                    onClick={e => { e.stopPropagation(); setUploadedFiles(prev => prev.filter(x => x.id !== f.id)); }}
-                    style={{ background: 'none', border: 'none', color: '#475569', cursor: 'pointer', fontSize: 14, padding: '0 2px', lineHeight: 1 }}
-                    title="Remove"
-                  >✕</button>
-                </div>
+                <button
+                  key={s.id}
+                  onClick={() => {
+                    setSettingsActiveSection(s.id);
+                    settingsSectionRefs.current[s.id]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }}
+                  style={{
+                    flexShrink: 0,
+                    padding: '4px 12px',
+                    borderRadius: 20,
+                    border: `1px solid ${active ? 'rgba(99,102,241,0.5)' : 'rgba(255,255,255,0.07)'}`,
+                    background: active ? 'rgba(99,102,241,0.18)' : 'rgba(255,255,255,0.03)',
+                    color: active ? '#818cf8' : '#64748b',
+                    fontSize: 11,
+                    fontWeight: active ? 700 : 500,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                    transition: 'all 0.15s',
+                  }}
+                >{s.icon} {s.label}</button>
               );
             })}
           </div>
-        )}
+        </div>
 
-        {/* Loaded sources summary */}
-        {uploadedFiles.filter(f => f.status === 'success').length > 0 && (
-          <div style={{ marginBottom: 20, padding: '14px 16px', borderRadius: 12, background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.05)' }}>
-            <div style={{ fontSize: 10, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700, marginBottom: 10 }}>Loaded data sources</div>
-            {uploadedFiles.filter(f => f.status === 'success').map((f, i, arr) => (
-              <div key={f.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: i < arr.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0' }}>{f.bankLabel}</div>
-                  <div style={{ fontSize: 11, color: '#475569', marginTop: 2 }}>
-                    {f.dateRange
-                      ? `${f.rowCount.toLocaleString()} transactions · ${f.dateRange.start} – ${f.dateRange.end}`
-                      : `${f.rowCount} holdings`}
-                  </div>
-                </div>
-                <button
-                  onClick={() => setUploadedFiles(prev => prev.filter(x => x.id !== f.id))}
-                  style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 6, color: '#64748b', cursor: 'pointer', fontSize: 11, padding: '4px 10px', fontFamily: 'inherit' }}
-                >✕ Remove</button>
-              </div>
-            ))}
+        {/* ══ Section: Data ══ */}
+        <div ref={el => { settingsSectionRefs.current['data'] = el; }} style={{ marginBottom: 32 }}>
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#e2e8f0', marginBottom: 4 }}>📁 Data</div>
+            <div style={{ fontSize: 11, color: '#5a6280', lineHeight: 1.6 }}>Upload your bank CSV files to see your real figures across all tabs.</div>
           </div>
-        )}
 
-        {/* Demo mode notice */}
-        {uploadedFiles.filter(f => f.status === 'success').length === 0 && (
-          <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(96,165,250,0.04)', border: '1px solid rgba(96,165,250,0.08)', fontSize: 12, color: '#64748b', lineHeight: 1.7, marginBottom: 20 }}>
-            Showing demo data. Upload your own CSV files above to see your real figures.
-          </div>
-        )}
-
-        {/* Clear all data */}
-        {uploadedFiles.length > 0 && (
-          <button
-            onClick={() => {
-              if (confirmClear) { setUploadedFiles([]); setConfirmClear(false); }
-              else { setConfirmClear(true); setTimeout(() => setConfirmClear(false), 4000); }
+          {/* Drop zone */}
+          <div
+            onDragOver={e => { e.preventDefault(); setDropActive(true); }}
+            onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDropActive(false); }}
+            onDrop={e => { e.preventDefault(); setDropActive(false); handleUploadedFiles(e.dataTransfer.files); }}
+            onClick={() => fileInputRef.current?.click()}
+            style={{
+              border: `2px dashed ${dropActive ? 'rgba(96,165,250,0.5)' : 'rgba(255,255,255,0.1)'}`,
+              borderRadius: 16,
+              padding: '48px 24px',
+              textAlign: 'center',
+              cursor: 'pointer',
+              background: dropActive ? 'rgba(96,165,250,0.04)' : 'rgba(255,255,255,0.01)',
+              transition: 'border-color 0.2s, background 0.2s',
+              marginBottom: 20,
+              userSelect: 'none',
             }}
-            style={{ width: '100%', padding: '11px 0', borderRadius: 10, border: `1px solid ${confirmClear ? 'rgba(248,113,113,0.3)' : 'rgba(255,255,255,0.05)'}`, cursor: 'pointer', background: confirmClear ? 'rgba(248,113,113,0.1)' : 'rgba(255,255,255,0.02)', color: confirmClear ? '#f87171' : '#64748b', fontSize: 13, fontWeight: 700, fontFamily: 'inherit', transition: 'all 0.2s' }}
           >
-            {confirmClear ? 'Tap again to confirm — this clears all data' : 'Clear all data'}
-          </button>
-        )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv"
+              multiple
+              style={{ display: 'none' }}
+              onChange={e => { handleUploadedFiles(e.target.files); e.target.value = ''; }}
+            />
+            <div style={{ fontSize: 36, marginBottom: 12, opacity: 0.25 }}>⬆</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: '#e2e8f0', marginBottom: 6 }}>Drop your bank CSV files here</div>
+            <div style={{ fontSize: 12, color: '#475569' }}>or click to browse</div>
+            <div style={{ marginTop: 14, fontSize: 10, color: '#334155', lineHeight: 1.9 }}>
+              Up Bank · CommSec · PayPal · CBA · ANZ · NAB · Westpac · BankWest · Macquarie · St.George
+            </div>
+          </div>
 
-        {/* ── Custom Categories / User Rules ── */}
-        <div style={{ marginTop: 32 }}>
+          {/* Per-file status chips */}
+          {uploadedFiles.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
+              {uploadedFiles.map(f => {
+                const isSuccess = f.status === 'success';
+                const isManual  = f.status === 'manual';
+                const accent    = isSuccess ? '#34d399' : isManual ? '#fbbf24' : '#f87171';
+                const icon      = isSuccess ? '✓' : isManual ? '⚠' : '✕';
+                const label     = isSuccess
+                  ? `${f.bankLabel} — ${f.rowCount.toLocaleString()} ${f.dateRange ? 'transactions' : 'holdings'} loaded`
+                  : isManual
+                    ? `${f.bankLabel} — unknown format, tap to map columns`
+                    : `Could not parse ${f.filename}`;
+                return (
+                  <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, background: `${accent}08`, border: `1px solid ${accent}18`, cursor: isManual ? 'pointer' : 'default' }}
+                    onClick={isManual ? () => setMappingFileId(f.id) : undefined}
+                  >
+                    <span style={{ color: accent, fontWeight: 700, fontSize: 13, flexShrink: 0 }}>{icon}</span>
+                    <span style={{ fontSize: 12, color: '#cbd5e1', flex: 1 }}>{label}</span>
+                    <button
+                      onClick={e => { e.stopPropagation(); setUploadedFiles(prev => prev.filter(x => x.id !== f.id)); }}
+                      style={{ background: 'none', border: 'none', color: '#475569', cursor: 'pointer', fontSize: 14, padding: '0 2px', lineHeight: 1 }}
+                      title="Remove"
+                    >✕</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Loaded sources summary */}
+          {uploadedFiles.filter(f => f.status === 'success').length > 0 && (
+            <div style={{ marginBottom: 20, padding: '14px 16px', borderRadius: 12, background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.05)' }}>
+              <div style={{ fontSize: 10, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700, marginBottom: 10 }}>Loaded data sources</div>
+              {uploadedFiles.filter(f => f.status === 'success').map((f, i, arr) => (
+                <div key={f.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: i < arr.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0' }}>{f.bankLabel}</div>
+                    <div style={{ fontSize: 11, color: '#475569', marginTop: 2 }}>
+                      {f.dateRange
+                        ? `${f.rowCount.toLocaleString()} transactions · ${f.dateRange.start} – ${f.dateRange.end}`
+                        : `${f.rowCount} holdings`}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setUploadedFiles(prev => prev.filter(x => x.id !== f.id))}
+                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 6, color: '#64748b', cursor: 'pointer', fontSize: 11, padding: '4px 10px', fontFamily: 'inherit' }}
+                  >✕ Remove</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Demo mode notice */}
+          {uploadedFiles.filter(f => f.status === 'success').length === 0 && (
+            <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(96,165,250,0.04)', border: '1px solid rgba(96,165,250,0.08)', fontSize: 12, color: '#64748b', lineHeight: 1.7, marginBottom: 20 }}>
+              Showing demo data. Upload your own CSV files above to see your real figures.
+            </div>
+          )}
+
+          {/* Clear all data */}
+          {uploadedFiles.length > 0 && (
+            <button
+              onClick={() => {
+                if (confirmClear) { setUploadedFiles([]); setConfirmClear(false); }
+                else { setConfirmClear(true); setTimeout(() => setConfirmClear(false), 4000); }
+              }}
+              style={{ width: '100%', padding: '11px 0', borderRadius: 10, border: `1px solid ${confirmClear ? 'rgba(248,113,113,0.3)' : 'rgba(255,255,255,0.05)'}`, cursor: 'pointer', background: confirmClear ? 'rgba(248,113,113,0.1)' : 'rgba(255,255,255,0.02)', color: confirmClear ? '#f87171' : '#64748b', fontSize: 13, fontWeight: 700, fontFamily: 'inherit', transition: 'all 0.2s' }}
+            >
+              {confirmClear ? 'Tap again to confirm — this clears all data' : 'Clear all data'}
+            </button>
+          )}
+        </div>
+
+        <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', marginBottom: 32 }} />
+
+        {/* ══ Section: Categories ══ */}
+        <div ref={el => { settingsSectionRefs.current['categories'] = el; }} style={{ marginBottom: 32 }}>
           <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginBottom: 4 }}>Custom Categories</div>
-            <div style={{ fontSize: 11, color: '#475569', lineHeight: 1.6 }}>Rules you've created to categorise merchants Comma doesn't recognise. These stay on your device.</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#e2e8f0', marginBottom: 4 }}>🏷️ Categories</div>
+            <div style={{ fontSize: 11, color: '#5a6280', lineHeight: 1.6 }}>Custom rules to override how Comma categorises your merchants.</div>
           </div>
 
           {/* Rule list */}
@@ -4449,11 +4779,138 @@ function DashboardInner() {
           )}
         </div>
 
-        {/* ── AI Insights ── */}
-        <div style={{ marginTop: 32 }}>
+        <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', marginBottom: 32 }} />
+
+        {/* ══ Section: Preferences ══ */}
+        {(() => {
+          const prefGroups = [
+            { label: 'Family',    cats: ['childcare', 'school', 'kids'] },
+            { label: 'Property',  cats: ['strata', 'mortgage', 'rent'] },
+            { label: 'Sensitive', cats: ['gambling', 'bnpl'] },
+            { label: 'Lifestyle', cats: ['alcohol', 'personal_care', 'pets'] },
+          ];
+          const catTxCounts = prefGroups.flatMap(g => g.cats).reduce((acc, cat) => {
+            acc[cat] = transactions.filter(tx => tx.cat === cat).length;
+            return acc;
+          }, {});
+          const catLabel = cat => cat.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+          return (
+            <div ref={el => { settingsSectionRefs.current['preferences'] = el; }} style={{ marginBottom: 32 }}>
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#e2e8f0', marginBottom: 4 }}>⚙️ Preferences</div>
+                <div style={{ fontSize: 11, color: '#5a6280', lineHeight: 1.6 }}>Customise which categories and features appear in your dashboard.</div>
+              </div>
+
+              {/* Category Visibility */}
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Category Visibility</div>
+                  <button
+                    onClick={() => {
+                      const zeroCats = prefGroups.flatMap(g => g.cats).filter(cat => catTxCounts[cat] === 0 && !preferences.hiddenCategories.includes(cat));
+                      if (zeroCats.length > 0) {
+                        setPreferences(prev => ({ ...prev, hiddenCategories: [...new Set([...prev.hiddenCategories, ...zeroCats])] }));
+                      }
+                    }}
+                    style={{ fontSize: 10, padding: '4px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)', color: '#64748b', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}
+                  >Recommended for me</button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {prefGroups.map(group => (
+                    <div key={group.label} style={{ padding: '12px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                      <div style={{ fontSize: 10, color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>{group.label}</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {group.cats.map(cat => {
+                          const isVisible = !preferences.hiddenCategories.includes(cat);
+                          const count = catTxCounts[cat];
+                          const color = CAT_COLORS[cat] || CAT_COLORS.other;
+                          return (
+                            <div key={cat} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ fontSize: 12, color: '#cbd5e1', fontWeight: 500 }}>{catLabel(cat)}</span>
+                                {count > 0 && (
+                                  <span style={{ fontSize: 10, color: color, background: `${color}18`, padding: '1px 6px', borderRadius: 10, fontWeight: 600 }}>{count} tx</span>
+                                )}
+                                {count === 0 && transactions.length > 0 && (
+                                  <span style={{ fontSize: 10, color: '#334155' }}>no transactions</span>
+                                )}
+                              </div>
+                              <div
+                                onClick={() => toggleHiddenCat(cat)}
+                                style={{
+                                  width: 36, height: 20, borderRadius: 10, cursor: 'pointer',
+                                  background: isVisible ? 'rgba(96,165,250,0.35)' : 'rgba(255,255,255,0.07)',
+                                  border: `1px solid ${isVisible ? 'rgba(96,165,250,0.5)' : 'rgba(255,255,255,0.1)'}`,
+                                  position: 'relative', flexShrink: 0, transition: 'all 0.2s',
+                                }}
+                              >
+                                <div style={{
+                                  width: 14, height: 14, borderRadius: '50%',
+                                  background: isVisible ? '#60a5fa' : '#334155',
+                                  position: 'absolute', top: 2, left: isVisible ? 18 : 2,
+                                  transition: 'all 0.2s',
+                                }} />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Display Preferences */}
+              <div style={{ padding: '12px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', marginBottom: 14 }}>
+                <div style={{ fontSize: 10, color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Display</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {/* Show cents */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 12, color: '#cbd5e1' }}>Show cents</span>
+                    <div
+                      onClick={() => setPreferences(prev => ({ ...prev, showCents: !prev.showCents }))}
+                      style={{
+                        width: 36, height: 20, borderRadius: 10, cursor: 'pointer',
+                        background: preferences.showCents ? 'rgba(96,165,250,0.35)' : 'rgba(255,255,255,0.07)',
+                        border: `1px solid ${preferences.showCents ? 'rgba(96,165,250,0.5)' : 'rgba(255,255,255,0.1)'}`,
+                        position: 'relative', flexShrink: 0, transition: 'all 0.2s',
+                      }}
+                    >
+                      <div style={{ width: 14, height: 14, borderRadius: '50%', background: preferences.showCents ? '#60a5fa' : '#334155', position: 'absolute', top: 2, left: preferences.showCents ? 18 : 2, transition: 'all 0.2s' }} />
+                    </div>
+                  </div>
+                  {/* Week starts on */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 12, color: '#cbd5e1' }}>Week starts on</span>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      {['monday', 'sunday'].map(day => (
+                        <button
+                          key={day}
+                          onClick={() => setPreferences(prev => ({ ...prev, weekStart: day }))}
+                          style={{ padding: '3px 10px', borderRadius: 8, border: `1px solid ${preferences.weekStart === day ? 'rgba(96,165,250,0.4)' : 'rgba(255,255,255,0.07)'}`, background: preferences.weekStart === day ? 'rgba(96,165,250,0.15)' : 'rgba(255,255,255,0.03)', color: preferences.weekStart === day ? '#93c5fd' : '#64748b', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textTransform: 'capitalize' }}
+                        >{day}</button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Reset to defaults */}
+              <button
+                onClick={() => setPreferences(DEFAULT_PREFERENCES)}
+                style={{ width: '100%', padding: '9px 0', borderRadius: 9, border: '1px solid rgba(255,255,255,0.05)', cursor: 'pointer', background: 'rgba(255,255,255,0.02)', color: '#475569', fontSize: 12, fontWeight: 600, fontFamily: 'inherit' }}
+              >Reset to defaults</button>
+            </div>
+          );
+        })()}
+
+        <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', marginBottom: 32 }} />
+
+        {/* ══ Section: AI Insights ══ */}
+        <div ref={el => { settingsSectionRefs.current['ai'] = el; }} style={{ marginBottom: 32 }}>
           <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginBottom: 4 }}>AI Insights</div>
-            <div style={{ fontSize: 11, color: '#475569', lineHeight: 1.6 }}>Connect your own AI to get personalised financial insights. Your data goes direct from your browser to your AI provider — Comma is never in the loop.</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#e2e8f0', marginBottom: 4 }}>🤖 AI Insights</div>
+            <div style={{ fontSize: 11, color: '#5a6280', lineHeight: 1.6 }}>Connect your preferred AI provider for personalised financial insights. Your data goes directly from your browser to your AI — Comma is never in the loop.</div>
           </div>
 
           {/* Provider selector */}
@@ -4525,11 +4982,80 @@ function DashboardInner() {
           </div>
         </div>
 
-        {/* Disclaimer */}
-        <div style={{ marginTop: 32, paddingTop: 20, borderTop: '1px solid rgba(255,255,255,0.05)', maxWidth: 600 }}>
-          <p style={{ margin: 0, fontSize: 11, color: '#5a6280', lineHeight: 1.7 }}>
-            Comma is a financial dashboard tool, not a licensed financial adviser. All information, calculations, and AI-generated insights are for personal informational use only and do not constitute financial, tax, or investment advice. Consult a qualified professional for decisions about your specific financial situation.
-          </p>
+        <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', marginBottom: 32 }} />
+
+        {/* ══ Section: Account ══ */}
+        <div ref={el => { settingsSectionRefs.current['account'] = el; }} style={{ marginBottom: 32 }}>
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#e2e8f0', marginBottom: 4 }}>👤 Account</div>
+            <div style={{ fontSize: 11, color: '#5a6280', lineHeight: 1.6 }}>Sign in to sync your data across devices with end-to-end encryption.</div>
+          </div>
+
+          <AuthSection
+            authUser={authUser}
+            userTier={userTier}
+            authView={authView}
+            authLoading={authLoading}
+            authError={authError}
+            authSuccess={authSuccess}
+            lastSynced={lastSynced}
+            syncStatus={syncStatus}
+            showForgotPw={showForgotPw}
+            onSetAuthView={v => { setAuthView(v); setAuthError(''); setAuthSuccess(''); setShowForgotPw(false); }}
+            onSignUp={handleAuthSignUp}
+            onSignIn={handleAuthSignIn}
+            onSignOut={handleAuthSignOut}
+            onSyncNow={handleSyncNow}
+            onSetShowForgotPw={setShowForgotPw}
+            onChangePassword={handleChangePassword}
+          />
+
+          {userTier === 'free' && (
+            <ProBadge feature="Encrypted cloud sync" message="Upgrade to Pro for encrypted cloud sync across devices" isSignedIn={!!authUser} onUpgrade={() => setUpgradeOpen(true)} onSignIn={() => { setTab('settings'); setAuthView('signup'); setAuthError(''); setAuthSuccess(''); setShowForgotPw(false); }} />
+          )}
+        </div>
+
+        <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', marginBottom: 32 }} />
+
+        {/* ══ Section: About ══ */}
+        <div ref={el => { settingsSectionRefs.current['about'] = el; }} style={{ marginBottom: 32 }}>
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#e2e8f0', marginBottom: 4 }}>ℹ️ About</div>
+            <div style={{ fontSize: 11, color: '#5a6280', lineHeight: 1.6 }}>Comma v0.5.0 — Personal finance dashboard for Australian households.</div>
+          </div>
+
+          {/* Disclaimer */}
+          <div style={{ padding: '12px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.05)', marginBottom: 14 }}>
+            <div style={{ fontSize: 10, color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Financial Disclaimer</div>
+            <p style={{ margin: 0, fontSize: 11, color: '#5a6280', lineHeight: 1.7 }}>
+              Comma is a financial dashboard tool, not a licensed financial adviser. All information, calculations, and AI-generated insights are for personal informational use only and do not constitute financial, tax, or investment advice. Consult a qualified professional for decisions about your specific financial situation.
+            </p>
+          </div>
+
+          {/* Links */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 20 }}>
+            {[
+              { label: 'Privacy Policy' },
+              { label: 'Terms of Use' },
+              { label: 'Help Centre' },
+              { label: 'Changelog' },
+            ].map(link => (
+              <a
+                key={link.label}
+                href="#"
+                onClick={e => e.preventDefault()}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 14px', borderRadius: 9, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', color: '#64748b', fontSize: 12, textDecoration: 'none' }}
+              >
+                <span>{link.label}</span>
+                <span style={{ fontSize: 10, opacity: 0.4 }}>↗</span>
+              </a>
+            ))}
+          </div>
+
+          {/* Made in Melbourne */}
+          <div style={{ textAlign: 'center', fontSize: 11, color: '#334155', paddingTop: 4 }}>
+            Made in Melbourne 🇦🇺
+          </div>
         </div>
 
       </div>)}
@@ -4792,6 +5318,7 @@ function DashboardInner() {
         </div>
       )}
     </div>
+    </>
   );
 }
 
