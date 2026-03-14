@@ -13,7 +13,9 @@
       "Bash(sort -t: -k1 -n)",
       "Bash(npm uninstall:*)",
       "Bash(npm audit:*)",
-      "Bash(npx npm-check-updates:*)"
+      "Bash(npx npm-check-updates:*)",
+      "Bash(npx vite:*)",
+      "Bash(grep -n \"tab === ''overview''\" /c/Users/r.airey/Desktop/financial-dashboard/src/dashboard.jsx)"
     ]
   }
 }

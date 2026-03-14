@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ComposedChart, Line, ReferenceLine, AreaChart, Area, Cell, LineChart, ReferenceDot } from "recharts";
 import { processCSVText, parseCSV, processUniversalBank, applyUserRules, aggregateTxs, extractMerchantPattern, sanitiseUserInput, sanitiseCSVField } from "./dataLoader.js";
 import { streamChat, buildFinancialContext } from "./aiProvider.js";
@@ -510,13 +510,39 @@ export const DEMO_DATA = {
 const fmt=v=>`$${Math.abs(v).toLocaleString()}`;
 const fmtK=v=>{const a=Math.abs(v);return(a>=1000?`${v<0?"-":""}$${(a/1000).toFixed(a>=10000?0:1)}k`:`$${v}`);};
 const Tip=({active,payload,label})=>{if(!active||!payload)return null;return(<div style={{background:"#111127",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,padding:"10px 14px"}}><div style={{color:"#94a3b8",marginBottom:5,fontWeight:600,fontSize:12,textTransform:"uppercase"}}>{label}</div>{payload.filter(p=>p.value!==0&&p.value!==null).map((p,i)=>(<div key={i} style={{color:p.color||"#e2e8f0",display:"flex",justifyContent:"space-between",gap:20,lineHeight:1.7,fontSize:13}}><span>{p.name}</span><span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>{typeof p.value==='number'&&Math.abs(p.value)>=1000?`$${Math.abs(p.value).toLocaleString()}`:fmt(p.value)}</span></div>))}</div>);};
-const St=({label,value,sub,accent="#60a5fa",small})=>(<div style={{background:"linear-gradient(145deg,rgba(255,255,255,0.035) 0%,rgba(255,255,255,0.008) 100%)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:small?"11px 13px":"14px 18px",flex:1,minWidth:small?85:115}}><div style={{color:"#64748b",fontSize:11,textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:600,marginBottom:4}}>{label}</div><div style={{color:accent,fontSize:small?15:20,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",lineHeight:1.1}}>{value}</div>{sub&&<div style={{color:"#475569",fontSize:11,marginTop:3}}>{sub}</div>}</div>);
-const Sec=({children,icon})=>(<div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,marginTop:24}}><span style={{fontSize:15}}>{icon}</span><h2 style={{margin:0,fontSize:14,fontWeight:700,color:"#e2e8f0"}}>{children}</h2><div style={{flex:1,height:1,background:"linear-gradient(90deg,rgba(255,255,255,0.07),transparent)"}}/></div>);
+const St=({label,value,sub,accent="#60a5fa",small})=>(<div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:small?"12px 16px":"16px 24px",flex:1,minWidth:small?85:115,boxShadow:"0 2px 12px rgba(0,0,0,0.3)"}}><div style={{color:"#5a6280",fontSize:11,textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:600,marginBottom:4,fontFamily:"'DM Sans',sans-serif"}}>{label}</div><div style={{color:accent,fontSize:small?15:24,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",lineHeight:1.1,fontVariantNumeric:"tabular-nums"}}>{value}</div>{sub&&<div style={{color:"#5a6280",fontSize:11,marginTop:3,fontFamily:"'DM Sans',sans-serif"}}>{sub}</div>}</div>);
+const Sec=({children,icon})=>(<div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,marginTop:24}}><span style={{fontSize:15}}>{icon}</span><h2 style={{margin:0,fontSize:12,fontWeight:700,color:"#5a6280",textTransform:"uppercase",letterSpacing:"0.1em",fontFamily:"'DM Sans',sans-serif"}}>{children}</h2><div style={{flex:1,height:1,background:"linear-gradient(90deg,rgba(255,255,255,0.07),transparent)"}}/></div>);
 const Ch=({children,height})=>(<div style={{background:"rgba(255,255,255,0.015)",borderRadius:14,border:"1px solid rgba(255,255,255,0.045)",padding:"12px 6px 6px"}}><ResponsiveContainer width="100%" height={height||200}>{children}</ResponsiveContainer></div>);
 const Lg=({items})=>(<div style={{display:"flex",justifyContent:"center",gap:11,padding:"5px 0",fontSize:11,flexWrap:"wrap"}}>{items.map(([l,c])=>(<div key={l} style={{display:"flex",alignItems:"center",gap:3,color:"#94a3b8"}}><div style={{width:5,height:5,borderRadius:2,background:c}}/>{l}</div>))}</div>);
 const Note=({color,children})=>(<div style={{marginTop:7,padding:9,borderRadius:8,background:`${color}08`,border:`1px solid ${color}15`,fontSize:12,color:"#94a3b8",lineHeight:1.5}}>{children}</div>);
 const Row=({label,value,color,bold,note,borderTop})=>(<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:bold?"8px 0":"4px 0",borderTop:borderTop?"1px solid rgba(255,255,255,0.06)":"none",marginTop:borderTop?4:0}}><span style={{fontSize:13,color:bold?"#e2e8f0":"#94a3b8",fontWeight:bold?700:400}}>{label}{note&&<span style={{fontSize:10,color:"#475569",marginLeft:6}}>{note}</span>}</span><span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:bold?15:13,fontWeight:bold?700:600,color:color||"#cbd5e1"}}>{value}</span></div>);
 const Badge=({text,color})=>(<span style={{fontSize:9,padding:"2px 7px",borderRadius:20,fontWeight:700,background:`${color}15`,color,whiteSpace:"nowrap"}}>{text}</span>);
+
+// ─── CURRENCY VALUE ──────────────────────────────────────────────────────────
+// Bloomberg-style: dollar sign muted, number carries semantic colour
+const CurrencyVal=({value,size=24,color})=>{
+  const abs=Math.abs(value);const isNeg=value<0;
+  const numColor=color||(isNeg?'#f5455c':'#eef0f6');
+  return(
+    <span className={abs>=10000?'breathe-spacing':undefined} style={{fontFamily:"'JetBrains Mono',monospace",fontSize:size,fontWeight:700,fontVariantNumeric:"tabular-nums",lineHeight:1.1}}>
+      <span style={{fontSize:'0.8em',color:'#8b95b8'}}>{isNeg?'-$':'$'}</span>
+      <span style={{color:numColor}}>{abs.toLocaleString()}</span>
+    </span>
+  );
+};
+
+// ─── PERCENTAGE CHANGE ───────────────────────────────────────────────────────
+// Animated arrow + coloured value
+const PctChange=({value})=>{
+  const isPos=value>=0;
+  const color=isPos?'#22c98a':'#f5455c';
+  return(
+    <span style={{color,fontVariantNumeric:"tabular-nums"}}>
+      <span className={isPos?'arrow-up':'arrow-down'} style={{fontSize:'0.85em',display:'inline-block'}}>{isPos?'↑':'↓'}</span>
+      {Math.abs(value).toFixed(1)}%
+    </span>
+  );
+};
 
 // ─── PRO BADGE ────────────────────────────────────────────────────────────────
 const ProBadge = ({ feature, message, isSignedIn, onUpgrade, onSignIn }) => (
@@ -652,6 +678,73 @@ const ALL_CATS=['grocery','restaurant','takeaway','coffee','delivery','alcohol',
 
 const DEFAULT_PREFERENCES = { hiddenCategories: ['gambling'], showGambling: false, showCents: false, weekStart: 'monday' };
 
+// ─── GOAL CONFETTI ───────────────────────────────────────────────────────────
+// CSS-only confetti burst when a goal hits 100%. Triggers once per goal (localStorage flag).
+const CONFETTI_COLORS = ['#6366f1','#a78bfa','#34d399','#60a5fa','#fbbf24','#f472b6'];
+function GoalConfetti({ goalId }) {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    const key = `comma_confetti_${goalId}`;
+    try {
+      if (!localStorage.getItem(key)) {
+        localStorage.setItem(key, '1');
+        setShow(true);
+        setTimeout(() => setShow(false), 700);
+      }
+    } catch {}
+  }, [goalId]);
+  if (!show) return null;
+  return (
+    <div style={{ position: 'absolute', top: 0, left: '50%', pointerEvents: 'none', zIndex: 10 }}>
+      {Array.from({ length: 12 }, (_, i) => (
+        <div key={i} style={{
+          position: 'absolute', width: 5, height: 5, borderRadius: 1,
+          background: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+          animation: `confetti${i % 12} 600ms ease-out both`,
+          animationDelay: `${i * 30}ms`,
+          left: `${(i - 6) * 12}px`,
+        }} />
+      ))}
+    </div>
+  );
+}
+
+// ─── GOAL PROGRESS BAR ───────────────────────────────────────────────────────
+// Animates from 0 → target on first render; colour shifts toward green past 80%.
+function GoalProgressBar({ pct, height = 8, radius = 4 }) {
+  const barRef     = useRef(null);
+  const animRef    = useRef(false);
+  const target     = Math.min(pct, 100);
+  const isNearGoal = target >= 80;
+  // Shift toward green when approaching goal — signals progress feels rewarding
+  const barBg      = isNearGoal
+    ? 'linear-gradient(90deg, #4f6ef7, #34a8a0)'
+    : '#4f6ef7';
+
+  useEffect(() => {
+    if (animRef.current || !barRef.current || target === 0) return;
+    animRef.current = true;
+    barRef.current.style.width = '0%';
+    requestAnimationFrame(() => {
+      if (!barRef.current) return;
+      barRef.current.style.transition = `width 600ms cubic-bezier(0.4,0,0.2,1)`;
+      barRef.current.style.width = `${target}%`;
+      // Bounce at end of fill
+      setTimeout(() => {
+        if (!barRef.current) return;
+        barRef.current.style.animation = 'barBounce 220ms ease-out both';
+        barRef.current.style.transformOrigin = 'center';
+      }, 600);
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div style={{ flex: 1, height, borderRadius: radius, background: 'rgba(255,255,255,0.05)', overflow: 'hidden' }}>
+      <div ref={barRef} style={{ width: `${target}%`, height: '100%', borderRadius: radius, background: barBg }} />
+    </div>
+  );
+}
+
 
 const Card=({label,value,type,detail})=>(<div style={{padding:"9px 11px",borderRadius:10,background:type==="in"?"rgba(52,211,153,0.04)":"rgba(248,113,113,0.04)",border:`1px solid ${type==="in"?"rgba(52,211,153,0.08)":"rgba(248,113,113,0.08)"}`}}><div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:12,fontWeight:600,color:"#cbd5e1"}}>{label}</span><span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:700,fontSize:13,color:type==="in"?"#34d399":"#f87171"}}>{type==="in"?"+":"−"}{value}</span></div><div style={{fontSize:10,color:"#475569",marginTop:2}}>{detail}</div></div>);
 const xP={tick:{fill:"#64748b",fontSize:11},axisLine:{stroke:"rgba(255,255,255,0.05)"}};
@@ -697,13 +790,216 @@ const NW_DEBT   = P.mainMortgage + P.topupLoan;
 const NW_NOW    = NW_ASSETS - NW_DEBT;
 
 const tabGroups=[
-  {label:"Summary",  tabs:[{id:"overview",l:"📊 Overview"},{id:"planner",l:"🎛️ Planner"}]},
-  {label:"Assets",   tabs:[{id:"networth",l:"💰 Net Worth"},{id:"property",l:"🏠 Property"}]},
-  {label:"Spending", tabs:[{id:"committed",l:"📌 Committed"},{id:"categories",l:"🛒 Categories"},{id:"health",l:"💊 Health"},{id:"subscriptions",l:"📱 Subscriptions"},{id:"savings",l:"🏦 Savings"}]},
-  {label:"Insights", tabs:[{id:"insights",l:"💡 Insights"},{id:"deep",l:"🔬 Deep Dive"},{id:"trend",l:"📉 Trend"},{id:"heatmap",l:"📅 Heatmap"},{id:"search",l:"🔍 Search"}]},
-  {label:"Planning", tabs:[{id:"goals",l:"🎯 Goals"},{id:"tax",l:"💸 Tax"},{id:"compare",l:"⚖️ Compare"},{id:"growth",l:"🌱 Growth"}]},
-  {label:"System",   tabs:[{id:"settings",l:"⚙️ Settings"}]},
+  {label:"Summary",  icon:"📊", tabs:[{id:"overview",l:"📊 Overview"},{id:"planner",l:"🎛️ Planner"}]},
+  {label:"Assets",   icon:"💰", tabs:[{id:"networth",l:"💰 Net Worth"},{id:"property",l:"🏠 Property"}]},
+  {label:"Spending", icon:"🛒", tabs:[{id:"committed",l:"📌 Committed"},{id:"categories",l:"🛒 Categories"},{id:"health",l:"💊 Health"},{id:"subscriptions",l:"📱 Subscriptions"},{id:"savings",l:"🏦 Savings"}]},
+  {label:"Insights", icon:"💡", tabs:[{id:"insights",l:"💡 Insights"},{id:"deep",l:"🔬 Deep Dive"},{id:"trend",l:"📉 Trend"},{id:"heatmap",l:"📅 Heatmap"},{id:"search",l:"🔍 Search"}]},
+  {label:"Planning", icon:"🎯", tabs:[{id:"goals",l:"🎯 Goals"},{id:"tax",l:"💸 Tax"},{id:"compare",l:"⚖️ Compare"},{id:"growth",l:"🌱 Growth"}]},
+  {label:"System",   icon:"⚙️", tabs:[{id:"settings",l:"⚙️ Settings"}]},
 ];
+
+function getTimeOfDay() {
+  const now = new Date();
+  const h = now.getHours();
+  const dow = now.getDay(); // 0=Sun, 6=Sat
+  const dom = now.getDate();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const mn = monthNames[now.getMonth()];
+  const period = h >= 5 && h < 12 ? 'morning' : h >= 12 && h < 17 ? 'afternoon' : h >= 17 && h < 21 ? 'evening' : 'night';
+  // Date-aware overrides (highest priority)
+  if (dom === 1) return { greeting: `Welcome to ${mn}`, period };
+  if (dom === daysInMonth) return { greeting: `Last day of ${mn}`, period };
+  if (dow === 6 || dow === 0 || (dow === 5 && h >= 17)) return { greeting: 'Happy weekend', period };
+  // Time-of-day
+  if (period === 'morning') return { greeting: 'Good morning', period };
+  if (period === 'afternoon') return { greeting: 'Good afternoon', period };
+  if (period === 'evening') return { greeting: 'Good evening', period };
+  return { greeting: 'Burning the midnight oil', period: 'night' };
+}
+
+// ─── COMMA SPARK ──────────────────────────────────────────────────────────────
+// Reusable sparkline terminating in the Comma brand glyph.
+// data: [{day:'YYYY-MM-DD', cumNet:number}], collapsed: bool
+// ─── COUNT-UP COMPONENT ──────────────────────────────────────────────────────
+// Animates a number from 0 → end on first mount only, ease-out cubic.
+// Skips animation if value is 0 or element is below fold.
+function CountUp({ end, duration = 500, prefix = '', suffix = '', decimals = 0, color }) {
+  const [display, setDisplay] = useState(end);
+  const mountedRef = useRef(false);
+  const frameRef   = useRef(null);
+  const spanRef    = useRef(null);
+
+  useEffect(() => {
+    if (mountedRef.current || !end) return;
+    // Skip if below viewport fold
+    if (spanRef.current) {
+      const rect = spanRef.current.getBoundingClientRect();
+      if (rect.top > window.innerHeight) return;
+    }
+    mountedRef.current = true;
+    const startTs = { current: null };
+    const animate = (ts) => {
+      if (!startTs.current) startTs.current = ts;
+      const elapsed  = ts - startTs.current;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased    = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+      const cur      = end * eased;
+      setDisplay(cur);
+      if (progress < 1) frameRef.current = requestAnimationFrame(animate);
+      else setDisplay(end);
+    };
+    frameRef.current = requestAnimationFrame(animate);
+    return () => { if (frameRef.current) cancelAnimationFrame(frameRef.current); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const formatted = decimals > 0
+    ? Math.abs(display).toFixed(decimals)
+    : Math.round(Math.abs(display)).toLocaleString();
+  const sign = end < 0 ? '-' : '';
+  const style = color ? { color } : {};
+  return <span ref={spanRef} style={style}>{sign}{prefix}{formatted}{suffix}</span>;
+}
+
+export function CommaSpark({ data, collapsed, todaySpent = 0, todayNet = 0, daysInMonth = 30, isAboveAvgPace = false, drawDuration = 800, upgradeFlash = false }) {
+  const [hovered, setHovered] = useState(false);
+  const sparkPathRef = useRef(null);
+  const drawnRef     = useRef(false);
+  const hasData = data && data.length > 1;
+  const lastCumNet = hasData ? data[data.length - 1].cumNet : 0;
+  const color = upgradeFlash ? '#a78bfa' : (hasData ? (lastCumNet >= 0 ? '#22c98a' : '#f5455c') : '#5a6280');
+  const rotation = isAboveAvgPace ? 6 : 0;
+  const W = 192; const H = 28; const PAD_R = 18;
+  const chartW = W - PAD_R;
+
+  // Monotone cubic spline builder (Fritsch-Carlson)
+  const buildPath = (pts) => {
+    const n = pts.length;
+    if (n < 2) return { sparkPath: '', fillPath: '', lastPt: null };
+    const slopes = [];
+    for (let i = 0; i < n - 1; i++) slopes[i] = (pts[i+1].y - pts[i].y) / ((pts[i+1].x - pts[i].x) || 1);
+    const m = Array(n).fill(0);
+    m[0] = slopes[0]; m[n-1] = slopes[n-2];
+    for (let i = 1; i < n - 1; i++) {
+      if (slopes[i-1] * slopes[i] <= 0) m[i] = 0;
+      else m[i] = (slopes[i-1] + slopes[i]) / 2;
+    }
+    for (let i = 0; i < n - 1; i++) {
+      if (Math.abs(slopes[i]) < 1e-10) { m[i] = m[i+1] = 0; continue; }
+      const a = m[i] / slopes[i], b = m[i+1] / slopes[i];
+      if (a*a + b*b > 9) { const t = 3 / Math.sqrt(a*a + b*b); m[i] = t*a*slopes[i]; m[i+1] = t*b*slopes[i]; }
+    }
+    let sparkPath = `M ${pts[0].x},${pts[0].y}`;
+    for (let i = 0; i < n - 1; i++) {
+      const dx = (pts[i+1].x - pts[i].x) / 3;
+      sparkPath += ` C ${pts[i].x+dx},${pts[i].y+m[i]*dx} ${pts[i+1].x-dx},${pts[i+1].y-m[i+1]*dx} ${pts[i+1].x},${pts[i+1].y}`;
+    }
+    return { sparkPath, fillPath: sparkPath + ` L ${pts[n-1].x},${H} L ${pts[0].x},${H} Z`, lastPt: pts[n-1] };
+  };
+
+  // Stroke-dashoffset draw animation on first mount
+  useEffect(() => {
+    if (drawnRef.current || !sparkPathRef.current || !hasData) return;
+    drawnRef.current = true;
+    const path = sparkPathRef.current;
+    try {
+      const len = path.getTotalLength();
+      path.style.strokeDasharray  = len;
+      path.style.strokeDashoffset = len;
+      path.style.transition = `stroke-dashoffset ${drawDuration}ms ease-out`;
+      requestAnimationFrame(() => { path.style.strokeDashoffset = '0'; });
+    } catch {}
+  }); // run after each render so ref is ready; drawnRef prevents re-animation
+
+  // Collapsed: big pulsing comma + compact amount only
+  if (collapsed) {
+    const sign = todayNet >= 0 ? '+' : '-';
+    const absNet = Math.abs(todayNet);
+    const compact = `${sign}$${absNet >= 1000 ? (absNet/1000).toFixed(1)+'k' : absNet}`;
+    return (
+      <div style={{ textAlign: 'center', padding: '2px 0 0' }}>
+        <svg width={40} height={36} style={{ overflow: 'visible', display: 'block', margin: '0 auto' }}>
+          <text x={20} y={30} textAnchor="middle"
+            fontFamily="'Playfair Display',Georgia,serif" fontSize={28} fill={color}
+            style={{ animation: hasData ? 'commaPulse 2s ease-in-out infinite' : 'none',
+              transition: 'transform 300ms ease', transformOrigin: '20px 30px',
+              transform: hasData ? `rotate(${rotation}deg)` : 'none' }}
+          >,</text>
+        </svg>
+        {hasData && (
+          <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, fontWeight: 700, color, marginTop: 0, lineHeight: 1 }}>
+            {compact}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Expanded state
+  let sparkPath = '', fillPath = '', lastPt = null;
+  if (hasData) {
+    const vals = data.map(d => d.cumNet);
+    const minV = Math.min(...vals), maxV = Math.max(...vals), range = maxV - minV || 1;
+    const pts = data.map((d, i) => ({
+      x: (i / (data.length - 1)) * chartW,
+      y: 4 + (1 - (d.cumNet - minV) / range) * (H - 8),
+    }));
+    ({ sparkPath, fillPath, lastPt } = buildPath(pts));
+  }
+
+  const todayX = chartW * (new Date().getDate() - 1) / Math.max(daysInMonth - 1, 1);
+  const gradId = 'spark-grad-exp';
+
+  return (
+    <div style={{ position: 'relative' }} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
+      {hovered && hasData && (
+        <div style={{ position: 'absolute', bottom: '100%', left: 0, marginBottom: 4, background: '#1e2235', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, padding: '4px 8px', fontSize: 10, color: '#e2e8f0', whiteSpace: 'nowrap', zIndex: 100, pointerEvents: 'none' }}>
+          Today: ${todaySpent.toLocaleString()} spent · {todayNet >= 0 ? '+' : '-'}${Math.abs(todayNet).toLocaleString()} net
+        </div>
+      )}
+      {hasData ? (
+        <>
+          <svg width={W} height={H} style={{ display: 'block', overflow: 'visible' }}>
+            <defs>
+              <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={color} stopOpacity={0.12} />
+                <stop offset="100%" stopColor={color} stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            {fillPath && <path d={fillPath} fill={`url(#${gradId})`} />}
+            {sparkPath && <path ref={sparkPathRef} d={sparkPath} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" />}
+            <line x1={todayX} y1={0} x2={todayX} y2={H} stroke="rgba(255,255,255,0.15)" strokeWidth={1} strokeDasharray="2,2" />
+            {lastPt && (
+              <text x={lastPt.x + 2} y={lastPt.y + 8}
+                fontFamily="'Playfair Display',Georgia,serif" fontSize={18} fill={color}
+                style={{ animation: 'commaPulse 2s ease-in-out infinite',
+                  transition: 'transform 300ms ease',
+                  transformOrigin: `${lastPt.x + 2}px ${lastPt.y + 8}px`,
+                  transform: `rotate(${rotation}deg)` }}
+              >,</text>
+            )}
+          </svg>
+          <div style={{ marginTop: 4, display: 'flex', alignItems: 'baseline', gap: 4 }}>
+            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 14, fontWeight: 700, color }}>
+              {todayNet >= 0 ? '+' : '-'}${Math.abs(todayNet).toLocaleString()}
+            </span>
+            <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, color: '#5a6280' }}>this month</span>
+          </div>
+        </>
+      ) : (
+        <>
+          <svg width={W} height={H} style={{ display: 'block', overflow: 'visible' }}>
+            <line x1={0} y1={H/2} x2={chartW} y2={H/2} stroke="#5a6280" strokeWidth={1} strokeDasharray="3,3" />
+            <text x={chartW + 2} y={H/2 + 8} fontFamily="'Playfair Display',Georgia,serif" fontSize={18} fill="#5a6280">,</text>
+          </svg>
+          <div style={{ marginTop: 4, fontSize: 10, color: '#5a6280', fontFamily: "'DM Sans',sans-serif" }}>
+            Upload data to see your Spark
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 // ─── SLIDER COMPONENT ────────────────────────────────────────────────────────
 const calcTax = (gross) => {
@@ -1564,25 +1860,277 @@ function OnboardingModal({ onExploreDemo, onUploadCSV, onSignIn, onSignUp, authL
 
 const VALID_TABS = new Set(tabGroups.flatMap(g => g.tabs.map(t => t.id)));
 
+// ─── MOBILE OVERVIEW STORY ────────────────────────────────────────────────────
+function MobileOverviewStory({
+  ovCurNet, ovCurIncome, currentMonthSpend,
+  sparkData, daysInCurrentMonth, isAboveAvgPace, todaySpentAmt, todayNet,
+  ovTopCats, ovFmtCat,
+  ovRecentTxs, ovFmtRelDate,
+  uncatCount, ovGoalNear, isLiveData, ovNoCurrentMonth,
+  nwSnapshots, currentMonthPrefix,
+  setTab,
+}) {
+  const [pullY, setPullY] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshFlash, setRefreshFlash] = useState(false);
+  const [swipeOffsets, setSwipeOffsets] = useState({});
+  const containerRef = useRef(null);
+  const pullTouchStartY = useRef(null);
+  const swipeTouchStarts = useRef({});
+  const statScrollRef = useRef(null);
+  const isTouch = typeof window !== 'undefined' && 'ontouchstart' in window;
+
+  // Pull-to-refresh
+  const handleContainerTouchStart = (e) => {
+    const scrollTop = containerRef.current?.scrollTop || 0;
+    pullTouchStartY.current = scrollTop <= 2 ? e.touches[0].clientY : null;
+  };
+  const handleContainerTouchMove = (e) => {
+    if (pullTouchStartY.current === null) return;
+    const deltaY = e.touches[0].clientY - pullTouchStartY.current;
+    if (deltaY > 0) setPullY(Math.min(deltaY * 0.4, 80));
+  };
+  const handleContainerTouchEnd = () => {
+    if (pullTouchStartY.current !== null && pullY >= 60 && !refreshing) {
+      setRefreshing(true);
+      setTimeout(() => {
+        setRefreshing(false);
+        setRefreshFlash(true);
+        setTimeout(() => setRefreshFlash(false), 600);
+      }, 700);
+    }
+    setPullY(0);
+    pullTouchStartY.current = null;
+  };
+
+  // Transaction swipe
+  const handleTxTouchStart = (id, e) => {
+    swipeTouchStarts.current[id] = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  };
+  const handleTxTouchMove = (id, e) => {
+    const start = swipeTouchStarts.current[id];
+    if (!start) return;
+    const dx = e.touches[0].clientX - start.x;
+    const dy = Math.abs(e.touches[0].clientY - start.y);
+    if (dy > 20) { delete swipeTouchStarts.current[id]; return; }
+    if (dx < 0) {
+      e.preventDefault();
+      setSwipeOffsets(prev => ({ ...prev, [id]: Math.max(dx, -120) }));
+    }
+  };
+  const handleTxTouchEnd = (id) => {
+    const offset = swipeOffsets[id] || 0;
+    if (offset < -100) {
+      setTab('search');
+      setSwipeOffsets(prev => ({ ...prev, [id]: 0 }));
+    } else if (offset < -60) {
+      setSwipeOffsets(prev => ({ ...prev, [id]: -80 }));
+    } else {
+      setSwipeOffsets(prev => ({ ...prev, [id]: 0 }));
+    }
+    delete swipeTouchStarts.current[id];
+  };
+
+  // Haptic on stat card snap
+  useEffect(() => {
+    const el = statScrollRef.current;
+    if (!el) return;
+    const onEnd = () => { if (navigator.vibrate) navigator.vibrate(10); };
+    el.addEventListener('scrollend', onEnd);
+    return () => el.removeEventListener('scrollend', onEnd);
+  }, []);
+
+  // Smart prompts
+  const prompts = [];
+  if (ovNoCurrentMonth) prompts.push({ text: 'Upload this month\'s data', sub: 'Keep your dashboard current', tab: 'settings', icon: '📁' });
+  if (uncatCount > 0) prompts.push({ text: `Review ${uncatCount} uncategorised transaction${uncatCount !== 1 ? 's' : ''}`, sub: 'Teach Comma your merchants', tab: 'search', icon: '🏷️' });
+  if (nwSnapshots && (nwSnapshots.length === 0 || !nwSnapshots.some(s => s.date?.startsWith(currentMonthPrefix)))) {
+    prompts.push({ text: 'Save a net worth snapshot', sub: 'Track your wealth over time', tab: 'networth', icon: '📸' });
+  }
+  if (ovGoalNear) {
+    const pct = Math.round((ovGoalNear.savedSoFar || 0) / ovGoalNear.targetAmount * 100);
+    prompts.push({ text: `${ovGoalNear.emoji || '🎯'} ${ovGoalNear.name} is ${pct}% complete!`, sub: 'Keep the momentum going', tab: 'goals', icon: null });
+  }
+  const shownPrompts = prompts.slice(0, 2);
+
+  const MOB_CAT_EMOJI = { grocery: '🛒', restaurant: '🍽️', takeaway: '🥡', coffee: '☕', sub: '📱', subscription: '📱', transport: '🚇', fuel: '⛽', toll: '🚗', health: '💊', utilities: '💡', insurance: '🛡️', clothing: '👕', shopping: '🛍️', entertainment: '🎬', travel: '✈️', paypal: '💙', dining: '🍽️', other: '📦', fitness: '🏋️', personal_care: '💆' };
+
+  const isPositive = ovCurNet >= 0;
+  const netColor = isPositive ? '#22c98a' : '#f5455c';
+  const peekScale = 1 + (Math.min(pullY, 40) / 40) * 0.05;
+  const peekOverlay = pullY > 0 ? Math.min(pullY / 80, 1) * 0.05 : 0;
+  const savingsRate = ovCurIncome > 0 ? Math.round((ovCurNet / ovCurIncome) * 100) : 0;
+
+  return (
+    <div
+      ref={containerRef}
+      onTouchStart={handleContainerTouchStart}
+      onTouchMove={handleContainerTouchMove}
+      onTouchEnd={handleContainerTouchEnd}
+      style={{ overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}
+    >
+      {/* Pull indicator */}
+      {(pullY > 12 || refreshing) && (
+        <div style={{ textAlign: 'center', fontSize: 12, color: '#5a6280', height: refreshing ? 32 : Math.min(pullY * 0.5, 32), display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', gap: 6 }}>
+          <span style={{ display: 'inline-block', animation: refreshing ? 'mobPullSpin 0.4s linear infinite' : 'none', opacity: pullY >= 60 || refreshing ? 1 : 0.5 }}>↻</span>
+          {pullY >= 60 ? 'Release to refresh' : 'Pull to refresh'}
+        </div>
+      )}
+
+      {/* ── SECTION 1: THE NUMBER ── */}
+      <div style={{ paddingTop: 48, paddingBottom: 24, paddingLeft: 16, paddingRight: 16, textAlign: 'center', position: 'relative', background: peekOverlay > 0 ? `rgba(0,0,0,${peekOverlay})` : 'transparent' }}>
+        <div style={{ transform: `scale(${peekScale})`, transition: pullY === 0 ? 'transform 0.3s ease' : 'none', display: 'inline-block' }}>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 36, fontWeight: 700, color: netColor, lineHeight: 1, animation: refreshFlash ? 'mobNetFlash 0.6s ease' : 'none' }}>
+            <span style={{ fontSize: '80%', color: '#8b95b8' }}>{isPositive ? '+' : '-'}</span>
+            <span style={{ fontSize: '80%', color: '#8b95b8' }}>$</span>
+            {Math.abs(ovCurNet).toLocaleString()}
+          </div>
+        </div>
+        <div style={{ fontSize: 13, color: '#5a6280', fontFamily: "'DM Sans', sans-serif", marginTop: 6 }}>this month</div>
+        <div style={{ margin: '12px -16px 0', height: 40, paddingLeft: 16, paddingRight: 16 }}>
+          <CommaSpark
+            data={sparkData}
+            collapsed={false}
+            todaySpent={todaySpentAmt}
+            todayNet={todayNet || ovCurNet}
+            daysInMonth={daysInCurrentMonth}
+            isAboveAvgPace={isAboveAvgPace}
+          />
+        </div>
+        <div style={{ marginTop: 16, fontSize: 14, color: '#475569', animation: 'mobBobChevron 2s ease-in-out infinite', display: 'inline-block' }}>⌄</div>
+      </div>
+
+      {/* ── SECTION 2: STAT CARDS ── */}
+      <div
+        ref={statScrollRef}
+        style={{ display: 'flex', overflowX: 'auto', scrollSnapType: 'x mandatory', scrollbarWidth: 'none', msOverflowStyle: 'none', gap: 10, paddingLeft: 16, paddingRight: 6, paddingBottom: 4, marginBottom: 20, WebkitOverflowScrolling: 'touch' }}
+      >
+        {[
+          { label: 'Income', value: `$${ovCurIncome.toLocaleString()}`, bg: 'rgba(52,211,153,0.08)', border: 'rgba(52,211,153,0.18)', color: '#34d399' },
+          { label: 'Spending', value: `$${currentMonthSpend.toLocaleString()}`, bg: 'rgba(248,113,113,0.08)', border: 'rgba(248,113,113,0.18)', color: '#f87171' },
+          { label: 'Savings rate', value: `${savingsRate > 0 ? '+' : ''}${savingsRate}%`, bg: savingsRate >= 0 ? 'rgba(99,102,241,0.08)' : 'rgba(248,113,113,0.08)', border: savingsRate >= 0 ? 'rgba(99,102,241,0.18)' : 'rgba(248,113,113,0.18)', color: savingsRate >= 0 ? '#818cf8' : '#f87171' },
+        ].map((card, i) => (
+          <div key={i} style={{ flexShrink: 0, width: 'calc(80vw - 32px)', maxWidth: 260, scrollSnapAlign: 'start', background: card.bg, border: `1px solid ${card.border}`, borderRadius: 12, padding: 16, minHeight: 80, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <div style={{ fontSize: 11, color: '#5a6280', fontWeight: 600, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{card.label}</div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: card.color, fontFamily: "'JetBrains Mono', monospace", lineHeight: 1 }}>{card.value}</div>
+          </div>
+        ))}
+        <div style={{ flexShrink: 0, width: 10 }} />
+      </div>
+
+      {/* ── SECTION 3: SPENDING BREAKDOWN ── */}
+      {ovTopCats.length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10, paddingLeft: 16 }}>Top spending</div>
+          <div style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, marginLeft: 16, marginRight: 16, overflow: 'hidden' }}>
+            {ovTopCats.slice(0, 5).map(({ cat, amt }, i) => (
+              <div key={cat} onClick={() => setTab('categories')} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderBottom: i < Math.min(ovTopCats.length, 5) - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none', cursor: 'pointer', minHeight: 44 }}>
+                <span style={{ fontSize: 18, flexShrink: 0 }}>{MOB_CAT_EMOJI[cat] || '📦'}</span>
+                <span style={{ fontSize: 13, color: '#94a3b8', flex: 1 }}>{ovFmtCat(cat)}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0', fontFamily: "'JetBrains Mono', monospace" }}>${amt.toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── SECTION 4: RECENT ACTIVITY ── */}
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10, paddingLeft: 16 }}>Recent</div>
+        <div style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, marginLeft: 16, marginRight: 16, overflow: 'hidden' }}>
+          {ovRecentTxs.slice(0, 5).map((tx, i) => {
+            const txId = tx.id || `mob-tx-${i}`;
+            const offset = swipeOffsets[txId] || 0;
+            const isUncategorised = !tx.cat || tx.cat === 'other';
+            return (
+              <div key={txId} style={{ position: 'relative', overflow: 'hidden', borderBottom: i < Math.min(ovRecentTxs.length, 5) - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+                {/* Action behind */}
+                <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', background: isUncategorised ? 'rgba(99,102,241,0.9)' : 'rgba(245,158,11,0.9)' }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#fff' }}>{isUncategorised ? 'Categorise' : 'Flag tax'}</span>
+                </div>
+                {/* Row */}
+                <div
+                  onTouchStart={isTouch ? (e) => handleTxTouchStart(txId, e) : undefined}
+                  onTouchMove={isTouch ? (e) => handleTxTouchMove(txId, e) : undefined}
+                  onTouchEnd={isTouch ? () => handleTxTouchEnd(txId) : undefined}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', minHeight: 44, background: '#0c0e1a', transform: `translateX(${offset}px)`, transition: offset === 0 ? 'transform 0.25s ease-out' : 'none', position: 'relative', zIndex: 1 }}
+                >
+                  <span style={{ fontSize: 10, color: '#475569', minWidth: 54, flexShrink: 0 }}>{ovFmtRelDate(tx.date)}</span>
+                  <span style={{ fontSize: 12, color: '#94a3b8', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tx.desc}</span>
+                  <span style={{ fontSize: 12, fontFamily: "'JetBrains Mono', monospace", color: (tx.amount || 0) >= 0 ? '#34d399' : '#f87171', fontWeight: 600, flexShrink: 0 }}>
+                    {(tx.amount || 0) >= 0 ? '+' : ''}${Math.abs(tx.amount || 0).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── SECTION 5: SMART PROMPTS ── */}
+      {shownPrompts.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10, paddingLeft: 16 }}>Suggested</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingLeft: 16, paddingRight: 16 }}>
+            {shownPrompts.map((p, i) => (
+              <div key={i} onClick={() => setTab(p.tab)} style={{ background: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 12, padding: '12px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, minHeight: 44 }}>
+                {p.icon && <span style={{ fontSize: 20, flexShrink: 0 }}>{p.icon}</span>}
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0', marginBottom: 2 }}>{p.text}</div>
+                  <div style={{ fontSize: 11, color: '#5a6280' }}>{p.sub}</div>
+                </div>
+                <span style={{ fontSize: 14, color: '#6366f1', flexShrink: 0 }}>→</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DashboardInner() {
+  const scrollPositions = useRef({});
+  // Track which tabs have had their entrance animation — prevents re-animating on re-visit
+  const enteredTabsRef  = useRef(new Set());
   const initialTab = (() => {
     const hash = window.location.hash.slice(1);
-    return VALID_TABS.has(hash) ? hash : "planner";
+    return VALID_TABS.has(hash) ? hash : 'overview';
   })();
   const [tab, setTabState] = useState(initialTab);
 
   const setTab = (tabId) => {
+    // Save scroll position for the outgoing tab
+    scrollPositions.current[tab] = window.scrollY;
     setTabState(tabId);
-    window.history.pushState({ tab: tabId }, '', '#' + tabId);
+    window.location.hash = tabId;
+    // Restore scroll position for the incoming tab after render
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      window.scrollTo(0, scrollPositions.current[tabId] ?? 0);
+    }));
   };
 
+  // isFirstTabEntry: true only on the first render of a given tab.
+  // useEffect marks it as entered after render so subsequent renders skip the animation.
+  const isFirstTabEntry = !enteredTabsRef.current.has(tab);
   useEffect(() => {
-    const handlePopState = (event) => {
-      const t = event.state?.tab || window.location.hash.slice(1) || 'planner';
-      setTabState(VALID_TABS.has(t) ? t : 'planner');
+    enteredTabsRef.current.add(tab);
+  }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Returns inline style for a staggered card entrance (only on first tab visit)
+  const cardStyle = (index) => isFirstTabEntry ? {
+    animation: 'cardEntrance 200ms ease-out both',
+    animationDelay: `${index * 50}ms`,
+  } : {};
+
+  // Hash routing: browser back/forward support
+  useEffect(() => {
+    const handler = () => {
+      const t = window.location.hash.slice(1);
+      if (VALID_TABS.has(t)) setTabState(t);
     };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+    window.addEventListener('hashchange', handler);
+    return () => window.removeEventListener('hashchange', handler);
   }, []);
 
   const tC = cc.reduce((s, c) => s + c.a, 0);
@@ -1638,6 +2186,24 @@ function DashboardInner() {
   });
   const [isMobile,       setIsMobile]       = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
   const [menuOpen,       setMenuOpen]       = useState(false);
+  const [mobileNavGroup, setMobileNavGroup] = useState(null); // label of open group in bottom nav secondary bar, or null
+  const [mobTapGroup,    setMobTapGroup]    = useState(null); // label currently animating tap bounce
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('comma_sidebar_collapsed') || 'false'); } catch { return false; }
+  });
+  const [sidebarHidden,  setSidebarHidden]  = useState(() => typeof window !== 'undefined' && window.innerWidth < 1024);
+  const [autoCollapsed,  setAutoCollapsed]  = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024 && window.innerWidth < 1280);
+  const [expandedGroups, setExpandedGroups] = useState(() => {
+    try {
+      const curTab = window.location.hash.slice(1) || 'planner';
+      const activeGroup = tabGroups.find(g => g.tabs.some(t => t.id === curTab))?.label;
+      return new Set(activeGroup ? [activeGroup] : ['Summary']);
+    } catch { return new Set(['Summary']); }
+  });
+  const [sidebarHoverGroup, setSidebarHoverGroup] = useState(null);
+  const [hoveredNavRow, setHoveredNavRow] = useState(null); // tab id for shortcut hint
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+  const [showBackOnline, setShowBackOnline] = useState(false);
   const [searchQuery,    setSearchQuery]    = useState('');
   const [searchCat,      setSearchCat]      = useState('all');
   const [openCatPicker,  setOpenCatPicker]  = useState(null);  // tx key (date+desc) or null
@@ -1662,12 +2228,60 @@ function DashboardInner() {
   });
   const [showReveal,    setShowReveal]    = useState(false);
   const [revealData,    setRevealData]    = useState(null);
+  const [firstBloom,    setFirstBloom]    = useState(false);  // one-time bloom after first upload reveal
+  const [upgradeToast,  setUpgradeToast]  = useState(false);  // tier upgrade toast
+  const [isDataParsing, setIsDataParsing] = useState(false);  // skeleton screen during file parse
+  const prevTierRef = useRef(null); // track previous tier for upgrade detection
 
   useEffect(() => {
-    const h = () => setIsMobile(window.innerWidth < 768);
+    const h = () => {
+      const w = window.innerWidth;
+      setIsMobile(w < 768);
+      setSidebarHidden(w < 1024);
+      setAutoCollapsed(w >= 1024 && w < 1280);
+    };
     window.addEventListener('resize', h);
     return () => window.removeEventListener('resize', h);
   }, []);
+
+  // Persist sidebar collapsed pref
+  useEffect(() => {
+    try { localStorage.setItem('comma_sidebar_collapsed', JSON.stringify(sidebarCollapsed)); } catch {}
+  }, [sidebarCollapsed]);
+
+  // Keep active group expanded when tab changes
+  useEffect(() => {
+    const g = tabGroups.find(grp => grp.tabs.some(t => t.id === tab));
+    if (g) setExpandedGroups(prev => { const next = new Set(prev); next.add(g.label); return next; });
+  }, [tab]);
+
+  // Online/offline awareness
+  useEffect(() => {
+    const goOnline = () => { setIsOnline(true); setShowBackOnline(true); setTimeout(() => setShowBackOnline(false), 2000); };
+    const goOffline = () => { setIsOnline(false); setShowBackOnline(false); };
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => { window.removeEventListener('online', goOnline); window.removeEventListener('offline', goOffline); };
+  }, []);
+
+  // Keyboard shortcuts: 1/2/3/,// + Cmd+K reservation
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); return; } // TODO: Cmd+K opens quick search (9D)
+      if (e.key === 'Escape') { setChatOpen(false); return; }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === '1') setTab('overview');
+      else if (e.key === '2') setTab('networth');
+      else if (e.key === '3') setTab('categories');
+      else if (e.key === '4') setTab('insights');
+      else if (e.key === '5') setTab('goals');
+      else if (e.key === '/') { e.preventDefault(); setTab('search'); }
+      else if (e.key === ',') setTab('settings');
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Persist raw CSV texts to localStorage whenever uploadedFiles changes
   useEffect(() => {
@@ -1780,6 +2394,19 @@ function DashboardInner() {
   // ─── AUTH STATE ──────────────────────────────────────────────────────────
   const [authUser,          setAuthUser]          = useState(null);
   const [userTier,          setUserTier]          = useState('free');
+  // Detect tier upgrades (free → pro/lifetime) and show celebration toast once
+  useEffect(() => {
+    if (prevTierRef.current && prevTierRef.current === 'free' && (userTier === 'pro' || userTier === 'lifetime')) {
+      try {
+        if (!localStorage.getItem('comma_upgrade_celebrated')) {
+          localStorage.setItem('comma_upgrade_celebrated', '1');
+          setUpgradeToast(true);
+          setTimeout(() => setUpgradeToast(false), 4500);
+        }
+      } catch {}
+    }
+    prevTierRef.current = userTier;
+  }, [userTier]); // eslint-disable-line react-hooks/exhaustive-deps
   const [upgradeOpen,       setUpgradeOpen]       = useState(false);
   const [purchaseToast,     setPurchaseToast]     = useState(null); // { tier: 'pro'|'lifetime' } | null
   const [authView,          setAuthView]          = useState('none'); // 'none' | 'signup' | 'signin'
@@ -2097,6 +2724,10 @@ function DashboardInner() {
   const [goalDraft,      setGoalDraft]      = useState({ emoji:'🎯', name:'', targetAmount:'', targetDate:'', savedSoFar:'0' });
 
   const handleUploadedFiles = (fileList) => {
+    // Show skeleton only if parsing takes longer than 200ms (avoids flash on fast files)
+    let skeletonTimer = null;
+    if (fileList.length > 0) skeletonTimer = setTimeout(() => setIsDataParsing(true), 200);
+    let remaining = fileList.length;
     Array.from(fileList).forEach(file => {
       const reader = new FileReader();
       reader.onload = e => {
@@ -2121,6 +2752,8 @@ function DashboardInner() {
             setRevealData(computeRevealData(record.parsedData));
             setShowReveal(true);
           }
+          remaining--;
+          if (remaining === 0) { clearTimeout(skeletonTimer); setIsDataParsing(false); }
           return [...prev, record];
         });
       };
@@ -2752,6 +3385,49 @@ function DashboardInner() {
   const totalPnlNet = pnl.reduce((s,r)=>s+r.n,0);
   const recentAvgNet = pnl.length>0 ? Math.round(pnl.slice(-2).reduce((s,r)=>s+r.n,0)/Math.min(pnl.length,2)) : 0;
 
+  // ─── COMMA SPARK + NAV BADGE DATA ────────────────────────────────────────
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const currentMonthPrefix = todayStr.slice(0, 7);
+  const daysInCurrentMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
+
+  const sparkData = useMemo(() => {
+    if (isLiveData) {
+      const dayMap = {};
+      transactions.forEach(tx => {
+        if (tx.date?.startsWith(currentMonthPrefix)) dayMap[tx.date] = (dayMap[tx.date] || 0) + (tx.amount || 0);
+      });
+      const sorted = Object.keys(dayMap).sort();
+      let cum = 0;
+      return sorted.map(day => { cum += dayMap[day]; return { day, cumNet: Math.round(cum) }; });
+    }
+    // Demo: spread last pnl month income over dailyTotals days
+    const lastPnl = pnl[pnl.length - 1];
+    if (!lastPnl) return [];
+    const allKeys = Object.keys(dailyTotals).sort();
+    const latestMM = allKeys.length ? allKeys[allKeys.length - 1].slice(0, 7) : null;
+    if (!latestMM) return [];
+    const mKeys = allKeys.filter(k => k.startsWith(latestMM));
+    const dailyInc = lastPnl.i / (mKeys.length || 1);
+    let cum = 0;
+    return mKeys.map(day => { cum += dailyInc - dailyTotals[day]; return { day, cumNet: Math.round(cum) }; });
+  }, [transactions, isLiveData, pnl, dailyTotals, currentMonthPrefix]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const sparkMonthNet = sparkData.length > 0 ? sparkData[sparkData.length - 1].cumNet : (pnl.length > 0 ? pnl[pnl.length - 1].n : 0);
+  const daysElapsed = Math.max(new Date().getDate(), 1);
+  const currentMonthSpend = isLiveData
+    ? Math.round(transactions.filter(tx => tx.date?.startsWith(currentMonthPrefix) && (tx.amount || 0) < 0).reduce((s, tx) => s + Math.abs(tx.amount), 0))
+    : (pnl.length > 0 ? pnl[pnl.length - 1].s : 0);
+  const todaySpentAmt = isLiveData
+    ? transactions.filter(tx => tx.date === todayStr && (tx.amount || 0) < 0).reduce((s, tx) => s + Math.abs(tx.amount), 0)
+    : dailyTotals[todayStr] || 0;
+  const avgDailySpend = currentMonthSpend / daysElapsed;
+  const isAboveAvgPace = todaySpentAmt > avgDailySpend;
+
+  const hasGoalNear80 = goals.some(g => g.targetAmount > 0 && (g.savedSoFar || 0) / g.targetAmount >= 0.8);
+  const dataUploadedThisMonth = isLiveData && uploadedFiles.some(f =>
+    f.status === 'success' && f.dateRange?.end?.startsWith(currentMonthPrefix)
+  );
+
   const healthScore = useMemo(() => {
     const recent = pnl.slice(-3);
     const avgIncome = recent.reduce((s,r) => s+r.i, 0) / (recent.length || 1);
@@ -2860,6 +3536,57 @@ function DashboardInner() {
     return access[feature]?.includes(userTier) ?? false;
   };
 
+  // ─── FAVICON NOTIFICATION DOT ────────────────────────────────────────────
+  useEffect(() => {
+    const goalMilestone = goals.some(g => g.targetAmount > 0 && (g.savedSoFar || 0) >= g.targetAmount);
+    const showIndigoDot = uncatCount > 5;
+    const showGreenDot  = !showIndigoDot && goalMilestone;
+    if (!showIndigoDot && !showGreenDot) return;
+    const dotColor = showIndigoDot ? '#4f6ef7' : '#22c98a';
+    const link = document.querySelector("link[rel~='icon']");
+    if (!link) return;
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 32; canvas.height = 32;
+      const ctx2d = canvas.getContext('2d');
+      ctx2d.drawImage(img, 0, 0, 32, 32);
+      ctx2d.beginPath();
+      ctx2d.arc(26, 6, 6, 0, Math.PI * 2);
+      ctx2d.fillStyle = dotColor;
+      ctx2d.fill();
+      link.href = canvas.toDataURL('image/png');
+    };
+    img.src = link.href;
+  }, [uncatCount, goals]);
+
+  // Clear favicon dot when user visits relevant tab
+  useEffect(() => {
+    if (tab === 'search' || tab === 'goals') {
+      const link = document.querySelector("link[rel~='icon']");
+      if (!link) return;
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 32; canvas.height = 32;
+        const ctx2d = canvas.getContext('2d');
+        ctx2d.drawImage(img, 0, 0, 32, 32);
+        link.href = canvas.toDataURL('image/png');
+      };
+      // Reset to original by reloading
+      const origHref = link.href;
+      if (!origHref.startsWith('data:')) return; // already plain URL
+      const baseImg = new Image();
+      baseImg.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 32; canvas.height = 32;
+        const ctx2d = canvas.getContext('2d');
+        ctx2d.drawImage(baseImg, 0, 0, 32, 32);
+        link.href = canvas.toDataURL('image/png');
+      };
+    }
+  }, [tab]);
+
   // ─── CATEGORIES TAB DATA ──────────────────────────────────────────────────
   const catData = useMemo(() => {
     const detectPM = (desc) => {
@@ -2921,13 +3648,108 @@ function DashboardInner() {
   return (
     <>
     {showOnboarding && <OnboardingModal onExploreDemo={handleLaunchDemo} onUploadCSV={handleOnboardingUploadCSV} onSignIn={handleAuthSignIn} onSignUp={handleAuthSignUp} authLoading={authLoading} authError={authError} onClearError={() => { setAuthError(''); setAuthSuccess(''); }} />}
-    {showReveal && revealData && <FirstUploadReveal data={revealData} onDismiss={() => { setShowReveal(false); setTab('overview'); }} />}
-    <div style={{ fontFamily: "'Instrument Sans',-apple-system,sans-serif", background: "#0b0b17", color: "#e2e8f0", minHeight: "100vh", display: "flex", ...(showOnboarding ? { filter: 'blur(8px)', pointerEvents: 'none', userSelect: 'none' } : {}) }}>
-      <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet" />
-      <style>{`input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#e2e8f0;cursor:pointer;border:2px solid #0b0b17;box-shadow:0 0 6px rgba(96,165,250,0.5)} input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#e2e8f0;cursor:pointer;border:2px solid #0b0b17}`}</style>
+    {showReveal && revealData && <FirstUploadReveal data={revealData} onDismiss={() => {
+      setShowReveal(false);
+      setTab('overview');
+      try {
+        if (!localStorage.getItem('comma_first_overview_shown')) {
+          localStorage.setItem('comma_first_overview_shown', '1');
+          setFirstBloom(true);
+          setTimeout(() => setFirstBloom(false), 1500);
+        }
+      } catch {}
+    }} />}
+    <div style={{ fontFamily: "'DM Sans','Instrument Sans',-apple-system,sans-serif", background: "#07080f", color: "#eef0f6", minHeight: "100vh", display: "flex", ...(showOnboarding ? { filter: 'blur(8px)', pointerEvents: 'none', userSelect: 'none' } : {}) }}>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet" />
+      <style>{`
+        @keyframes commaPulse{0%,100%{opacity:0.5}50%{opacity:1}}
+        @keyframes mobBobChevron{0%,100%{transform:translateY(0)}50%{transform:translateY(4px)}}
+        @keyframes mobPullSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+        @keyframes mobNetFlash{0%{color:inherit}30%{color:#22c98a}70%{color:#22c98a}100%{color:inherit}}
+        @keyframes mobTapBounce{0%{transform:scale(1)}50%{transform:scale(1.15)}100%{transform:scale(1)}}
+        @keyframes backOnlineFade{0%{opacity:1}80%{opacity:1}100%{opacity:0}}
+        @keyframes arrowUp{from{transform:translateY(3px);opacity:0}to{transform:translateY(0);opacity:1}}
+        @keyframes arrowDown{from{transform:translateY(-3px);opacity:0}to{transform:translateY(0);opacity:1}}
+        @keyframes breatheSpacing{from{letter-spacing:0}to{letter-spacing:0.02em}}
+        .breathe-spacing{animation:breatheSpacing 500ms ease-out both}
+        @keyframes nwFloat{from{transform:translateY(2px)}to{transform:translateY(0)}}
+        @keyframes nwSink{from{transform:translateY(-2px)}to{transform:translateY(0)}}
+        @keyframes gradMesh{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+        .overview-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+        .overview-grid .ov-span2{grid-column:span 2}
+        .overview-grid .ov-span3{grid-column:1/-1}
+        @media(max-width:1024px){.overview-grid{grid-template-columns:repeat(2,1fr)}.overview-grid .ov-span2{grid-column:span 2}.overview-grid .ov-span3{grid-column:1/-1}}
+        @media(max-width:767px){.overview-grid{grid-template-columns:1fr}.overview-grid .ov-span2,.overview-grid .ov-span3{grid-column:span 1}}
+        .arrow-up{animation:arrowUp 300ms ease-out both}
+        .arrow-down{animation:arrowDown 300ms ease-out both}
+        .nw-float{animation:nwFloat 300ms ease-out both}
+        .nw-sink{animation:nwSink 300ms ease-out both}
+        [data-mono],.font-mono{font-variant-numeric:tabular-nums}
+        input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#e2e8f0;cursor:pointer;border:2px solid #07080f;box-shadow:0 0 6px rgba(96,165,250,0.5)}
+        input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#e2e8f0;cursor:pointer;border:2px solid #07080f}
+        @media(hover:hover){
+          .hover-card{transition:transform 150ms ease,box-shadow 150ms ease}
+          .hover-card:hover{transform:translateY(-1px);box-shadow:0 4px 20px rgba(0,0,0,0.4)!important}
+          .hover-card:active{transform:scale(0.99)}
+        }
+        @media print{
+          #sidebar-desktop,#header-strip,#bottom-bar-mobile,.chat-panel-float,.ai-chat-fab,.upgrade-prompt,input[type=range],[class*=upgrade]{display:none!important}
+          body,#root{background:#ffffff!important;color:#1a1a1a!important}
+          .main-content{margin-left:0!important;padding:0 24px!important}
+          *{box-shadow:none!important;text-shadow:none!important}
+          .card-panel{background:#ffffff!important;border:1px solid #e0e0e0!important;break-inside:avoid}
+          span,div{color:inherit}
+          .print-header{display:flex!important;align-items:center;gap:12px;border-bottom:2px solid #1a1a1a;padding-bottom:16px;margin-bottom:24px;font-family:'DM Sans',sans-serif}
+          .print-footer{display:block!important;text-align:center;margin-top:32px;border-top:1px solid #e0e0e0;padding-top:12px;font-size:11px;color:#888;font-family:'DM Sans',sans-serif}
+        }
+        @media not print{.print-header,.print-footer{display:none!important}}
+        @keyframes fadeSlideIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes cardEntrance{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes barBounce{0%{transform:scaleY(1)}35%{transform:scaleY(1.25)}65%{transform:scaleY(0.92)}100%{transform:scaleY(1)}}
+        @keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
+        @keyframes streakGlow{0%,100%{text-shadow:none}50%{text-shadow:0 0 8px rgba(79,110,247,0.6),0 0 16px rgba(79,110,247,0.3)}}
+        @keyframes bloomBorder{0%{box-shadow:none}30%{box-shadow:-8px 0 30px rgba(79,110,247,0.2)}100%{box-shadow:none}}
+        @keyframes upgradePulse{0%,100%{box-shadow:none}50%{box-shadow:0 0 20px rgba(79,110,247,0.25)}}
+        @keyframes confetti0{0%{transform:translate(0,0) rotate(0deg);opacity:1}100%{transform:translate(-18px,-72px) rotate(200deg);opacity:0}}
+        @keyframes confetti1{0%{transform:translate(0,0) rotate(0deg);opacity:1}100%{transform:translate(12px,-58px) rotate(-150deg);opacity:0}}
+        @keyframes confetti2{0%{transform:translate(0,0) rotate(0deg);opacity:1}100%{transform:translate(28px,-80px) rotate(270deg);opacity:0}}
+        @keyframes confetti3{0%{transform:translate(0,0) rotate(0deg);opacity:1}100%{transform:translate(-8px,-65px) rotate(-230deg);opacity:0}}
+        @keyframes confetti4{0%{transform:translate(0,0) rotate(0deg);opacity:1}100%{transform:translate(22px,-50px) rotate(180deg);opacity:0}}
+        @keyframes confetti5{0%{transform:translate(0,0) rotate(0deg);opacity:1}100%{transform:translate(-30px,-44px) rotate(-100deg);opacity:0}}
+        @keyframes confetti6{0%{transform:translate(0,0) rotate(0deg);opacity:1}100%{transform:translate(6px,-78px) rotate(310deg);opacity:0}}
+        @keyframes confetti7{0%{transform:translate(0,0) rotate(0deg);opacity:1}100%{transform:translate(-24px,-60px) rotate(-280deg);opacity:0}}
+        @keyframes confetti8{0%{transform:translate(0,0) rotate(0deg);opacity:1}100%{transform:translate(16px,-55px) rotate(120deg);opacity:0}}
+        @keyframes confetti9{0%{transform:translate(0,0) rotate(0deg);opacity:1}100%{transform:translate(-10px,-70px) rotate(-190deg);opacity:0}}
+        @keyframes confetti10{0%{transform:translate(0,0) rotate(0deg);opacity:1}100%{transform:translate(32px,-62px) rotate(240deg);opacity:0}}
+        @keyframes confetti11{0%{transform:translate(0,0) rotate(0deg);opacity:1}100%{transform:translate(-20px,-48px) rotate(-320deg);opacity:0}}
+        @keyframes toastSlideIn{from{opacity:0;transform:translateX(-50%) translateY(-12px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+        @keyframes toastSlideOut{from{opacity:1;transform:translateX(-50%) translateY(0)}to{opacity:0;transform:translateX(-50%) translateY(-12px)}}
+        .card-entrance{animation:cardEntrance 200ms ease-out both}
+        .skeleton-shimmer{background:linear-gradient(90deg,rgba(255,255,255,0.03) 0%,rgba(255,255,255,0.07) 50%,rgba(255,255,255,0.03) 100%);background-size:200% 100%;animation:shimmer 1.5s linear infinite}
+        @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:0.01ms!important;transition-duration:0.01ms!important}}
+      `}</style>
 
       {/* Upgrade modal */}
       {upgradeOpen && <UpgradeModal onClose={() => setUpgradeOpen(false)} userTier={userTier} authUser={authUser} />}
+
+      {/* Tier upgrade celebration toast — "Welcome to Pro" */}
+      {upgradeToast && (
+        <div style={{
+          position: 'fixed', top: 72, left: '50%', transform: 'translateX(-50%)', zIndex: 10001,
+          background: 'linear-gradient(135deg,#1e1b4b,#312e81)',
+          border: '1px solid rgba(99,102,241,0.4)', borderLeft: '3px solid #6366f1',
+          borderRadius: 14, padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 12,
+          boxShadow: '0 8px 32px rgba(0,0,0,0.5)', maxWidth: 340, width: 'calc(100vw - 48px)',
+          animation: 'toastSlideIn 250ms ease-out both',
+        }}>
+          <div style={{ fontSize: 22, flexShrink: 0 }}>✨</div>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#e2e8f0', marginBottom: 2 }}>Welcome to Pro</div>
+            <div style={{ fontSize: 11, color: '#94a3b8', lineHeight: 1.5 }}>12 months of history unlocked</div>
+          </div>
+          <button onClick={() => setUpgradeToast(false)} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#475569', fontSize: 16, cursor: 'pointer', flexShrink: 0, padding: '0 4px' }}>×</button>
+        </div>
+      )}
 
       {/* Purchase success toast */}
       {purchaseToast && (
@@ -2955,85 +3777,451 @@ function DashboardInner() {
       )}
 
       {/* ═══ DESKTOP SIDEBAR ═══ */}
-      {!isMobile && (
-        <div style={{ width: 215, flexShrink: 0, background: "rgba(255,255,255,0.015)", borderRight: "1px solid rgba(255,255,255,0.05)", padding: "22px 12px 48px", display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh", overflowY: "auto" }}>
-          {/* Comma logo */}
-          <div style={{ padding: "0 10px", marginBottom: 10 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-              <span style={{ background: "linear-gradient(135deg,#6366f1,#8b5cf6)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", fontWeight: 800, fontSize: 20, lineHeight: 1 }}>,</span>
-              <span style={{ fontWeight: 700, fontSize: 16, color: "#f1f5f9" }}>Comma</span>
-              {isLiveData ? (
-                <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 20, background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.2)", color: "#34d399", fontWeight: 700 }}>Your data</span>
-              ) : (
-                <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 20, background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.2)", color: "#f59e0b", fontWeight: 700 }}>Demo</span>
-              )}
-              {/* Sync status indicator */}
-              {!authUser && (
-                <span style={{ fontSize: 10, color: '#475569', cursor: 'default' }} title="Sign in to sync your data across devices">Local only</span>
-              )}
-              {authUser && syncStatus === 'syncing' && (
-                <span className="sync-syncing" style={{ fontSize: 10, color: '#f59e0b', cursor: 'default' }} title="Syncing…">Syncing…</span>
-              )}
-              {authUser && syncStatus === 'synced' && (
-                <span style={{ fontSize: 10, color: '#34d399', cursor: 'pointer' }} title={lastSynced ? `Last synced ${new Date(lastSynced).toLocaleTimeString()}` : 'Synced'} onClick={handleSyncNow}>✓ Synced</span>
-              )}
-              {authUser && syncStatus === 'offline' && (
-                <span style={{ fontSize: 10, color: '#f87171', cursor: 'pointer' }} title="Sync failed — click to retry" onClick={handleSyncNow}>Offline</span>
+      {!sidebarHidden && (() => {
+        const effectiveCollapsed = sidebarCollapsed || autoCollapsed;
+        const sidebarW = effectiveCollapsed ? 64 : 240;
+        const { greeting, period } = getTimeOfDay();
+        const userName = authUser?.email ? authUser.email.split('@')[0] : null;
+        // Ambient tints — barely perceptible background washes per time period
+        const headerTint = period === 'morning' ? 'rgba(255,200,100,0.03)'
+          : period === 'evening' ? 'rgba(79,110,247,0.02)'
+          : period === 'night' ? 'rgba(0,0,0,0.15)'
+          : 'transparent';
+        const pulseTextColor = period === 'night' ? '#8b95b8' : undefined;
+        return (
+          <div id="sidebar-desktop" style={{ width: sidebarW, flexShrink: 0, background: '#0c0e1a', borderRight: '1px solid rgba(255,255,255,0.06)', height: '100vh', position: 'fixed', left: 0, top: 0, zIndex: 50, display: 'flex', flexDirection: 'column', transition: 'width 200ms ease', overflowX: 'hidden', overflowY: 'hidden', ...(upgradeToast ? { animation: 'upgradePulse 600ms ease-out 3' } : {}) }}>
+
+            {/* ── Header: logo + greeting (ambient tint overlay) ── */}
+            <div style={{ padding: effectiveCollapsed ? '18px 0 14px' : '18px 16px 14px', borderBottom: '1px solid rgba(255,255,255,0.04)', flexShrink: 0, background: headerTint, transition: 'background 1s ease' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: effectiveCollapsed ? 'center' : 'flex-start', gap: 8, marginBottom: effectiveCollapsed ? 0 : 6 }}>
+                <span style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', fontWeight: 800, fontSize: 22, lineHeight: 1, flexShrink: 0 }}>,</span>
+                {!effectiveCollapsed && <span style={{ fontWeight: 700, fontSize: 16, color: '#f1f5f9' }}>Comma</span>}
+              </div>
+              {!effectiveCollapsed && (
+                <div style={{ fontSize: 11, color: pulseTextColor || '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', transition: 'color 1s ease' }}>
+                  {greeting}{userName ? `, ${userName}` : ''}
+                </div>
               )}
             </div>
-            <div style={{ color: "#475569", fontSize: 11 }}>{upData?.dateRange ? `${upData.dateRange.start} — ${upData.dateRange.end}` : "Sep '25 — Feb '26 · Demo"} · AUD</div>
-          </div>
-          <div style={{ padding: "0 10px", marginBottom: 16 }}>
-            {isLiveData ? (
-              <div style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 8px", borderRadius:8, background:"rgba(52,211,153,0.08)", border:"1px solid rgba(52,211,153,0.15)" }}>
-                <div style={{ width:6, height:6, borderRadius:"50%", background:"#34d399", flexShrink:0 }} />
-                <span style={{ fontSize:10, color:"#34d399", fontWeight:700 }}>Your data · {bankTxCount.toLocaleString()} transactions</span>
-              </div>
-            ) : (
-              <div style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 8px", borderRadius:8, background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.06)" }}>
-                <div style={{ width:6, height:6, borderRadius:"50%", background:"#475569", flexShrink:0 }} />
-                <span style={{ fontSize:10, color:"#475569" }}>Demo data — upload CSV to use your own</span>
-              </div>
-            )}
-            {historyLimitActive && (
-              <div style={{ marginTop:5, display:"flex", alignItems:"center", justifyContent:"space-between", padding:"5px 8px", borderRadius:8, background:"rgba(251,191,36,0.06)", border:"1px solid rgba(251,191,36,0.18)" }}>
-                <span style={{ fontSize:10, color:"#92400e" }}>Current month only</span>
-                <button onClick={() => setUpgradeOpen(true)} style={{ background:"none", border:"none", color:"#fbbf24", fontSize:10, fontWeight:700, cursor:"pointer", padding:0 }}>Upgrade ↑</button>
-              </div>
-            )}
-          </div>
-          <SidebarContent />
-        </div>
-      )}
 
-      {/* ═══ MOBILE TOP BAR ═══ */}
-      {isMobile && (
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, height: 52, background: "#0d0d1f", borderBottom: "1px solid rgba(255,255,255,0.07)", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", zIndex: 100 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ background: "linear-gradient(135deg,#6366f1,#8b5cf6)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", fontWeight: 800, fontSize: 20, lineHeight: 1 }}>,</span>
-            <span style={{ fontWeight: 700, fontSize: 15, color: "#f1f5f9" }}>Comma</span>
-            {isLiveData ? (
-              <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 20, background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.2)", color: "#34d399", fontWeight: 700 }}>Your data</span>
-            ) : (
-              <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 20, background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.2)", color: "#f59e0b", fontWeight: 700 }}>Demo</span>
+            {/* ── Comma Spark (replaces plain financial pulse text) ── */}
+            <div style={{ padding: effectiveCollapsed ? '8px 0' : '10px 16px 8px', borderBottom: '1px solid rgba(255,255,255,0.04)', flexShrink: 0, overflow: 'hidden' }}>
+              <CommaSpark
+                data={sparkData}
+                collapsed={effectiveCollapsed}
+                todaySpent={todaySpentAmt}
+                todayNet={sparkMonthNet}
+                daysInMonth={daysInCurrentMonth}
+                isAboveAvgPace={isAboveAvgPace}
+                drawDuration={firstBloom ? 1200 : 800}
+                upgradeFlash={upgradeToast}
+              />
+            </div>
+
+            {/* ── Navigation groups ── */}
+            <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', paddingTop: 6, paddingBottom: 6, scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+              {tabGroups.map(group => {
+                const isActiveGroup = group.tabs.some(t => t.id === tab);
+                const isExpanded = (expandedGroups.has(group.label) || isActiveGroup) && !effectiveCollapsed;
+                return (
+                  <div key={group.label} style={{ position: 'relative' }}>
+                    {/* Group header */}
+                    <button
+                      title={effectiveCollapsed ? group.label : undefined}
+                      onMouseEnter={() => effectiveCollapsed && setSidebarHoverGroup(group.label)}
+                      onMouseLeave={() => setSidebarHoverGroup(null)}
+                      onClick={() => {
+                        if (effectiveCollapsed) {
+                          if (!autoCollapsed) setSidebarCollapsed(false);
+                          setExpandedGroups(new Set([group.label]));
+                        } else {
+                          setExpandedGroups(prev => {
+                            const next = new Set(prev);
+                            if (next.has(group.label) && !isActiveGroup) next.delete(group.label);
+                            else next.add(group.label);
+                            return next;
+                          });
+                        }
+                      }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 8, width: effectiveCollapsed ? 'calc(100% - 8px)' : 'calc(100% - 12px)', padding: effectiveCollapsed ? '8px 0' : '7px 12px', border: 'none', background: isActiveGroup && effectiveCollapsed ? 'rgba(99,102,241,0.1)' : 'transparent', cursor: 'pointer', fontFamily: 'inherit', justifyContent: effectiveCollapsed ? 'center' : 'flex-start', borderRadius: 6, margin: effectiveCollapsed ? '1px 4px' : '1px 6px', position: 'relative' }}>
+                      <span style={{ fontSize: effectiveCollapsed ? 16 : 13, flexShrink: 0 }}>{group.icon}</span>
+                      {!effectiveCollapsed && (
+                        <>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: isActiveGroup ? '#94a3b8' : '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', flex: 1, textAlign: 'left' }}>{group.label}</span>
+                          {/* Nav group badges */}
+                          {group.label === 'Spending' && currentMonthSpend > 0 && (
+                            <span style={{ fontSize: 10, color: '#5a6280', fontFamily: "'JetBrains Mono',monospace", marginRight: 4 }}>${currentMonthSpend.toLocaleString()}</span>
+                          )}
+                          {group.label === 'Insights' && uncatCount > 0 && (
+                            <span style={{ fontSize: 10, color: '#f59e0b', fontWeight: 700, background: 'rgba(245,158,11,0.12)', borderRadius: 4, padding: '1px 5px', marginRight: 4 }}>{uncatCount}</span>
+                          )}
+                          {group.label === 'Planning' && hasGoalNear80 && (
+                            <span style={{ fontSize: 11, marginRight: 4 }}>🎯</span>
+                          )}
+                          {group.label === 'System' && !dataUploadedThisMonth && (
+                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#f59e0b', display: 'inline-block', marginRight: 4, flexShrink: 0 }} />
+                          )}
+                          <span style={{ fontSize: 10, color: '#334155' }}>{isExpanded ? '▾' : '›'}</span>
+                        </>
+                      )}
+                      {/* Collapsed badges as dots */}
+                      {effectiveCollapsed && (
+                        <>
+                          {group.label === 'Insights' && uncatCount > 0 && (
+                            <span style={{ position: 'absolute', top: 6, right: 6, width: 6, height: 6, borderRadius: '50%', background: '#f59e0b' }} />
+                          )}
+                          {group.label === 'System' && !dataUploadedThisMonth && (
+                            <span style={{ position: 'absolute', top: 6, right: 6, width: 6, height: 6, borderRadius: '50%', background: '#f59e0b' }} />
+                          )}
+                          {group.label === 'Planning' && hasGoalNear80 && (
+                            <span style={{ position: 'absolute', top: 6, right: 6, width: 6, height: 6, borderRadius: '50%', background: '#34d399' }} />
+                          )}
+                        </>
+                      )}
+                    </button>
+
+                    {/* Hover tooltip (collapsed only) */}
+                    {effectiveCollapsed && sidebarHoverGroup === group.label && (
+                      <div style={{ position: 'fixed', left: 68, zIndex: 200, background: '#1e2235', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 7, padding: '5px 10px', fontSize: 11, fontWeight: 600, color: '#e2e8f0', whiteSpace: 'nowrap', pointerEvents: 'none', boxShadow: '0 4px 16px rgba(0,0,0,0.4)' }}>
+                        {group.label}
+                      </div>
+                    )}
+
+                    {/* Sub-tabs — max-height transition for expand/collapse */}
+                    <div style={{
+                      overflow: 'hidden',
+                      maxHeight: isExpanded ? `${group.tabs.length * 36}px` : '0px',
+                      opacity: isExpanded ? 1 : 0,
+                      transition: 'max-height 200ms ease, opacity 200ms ease',
+                    }}>
+                      <div style={{ paddingLeft: 4, paddingRight: 6, marginBottom: 2 }}>
+                        {group.tabs.map(t => {
+                          const KB_HINTS = { overview: '1', networth: '2', categories: '3', insights: '4', goals: '5', search: '/', settings: ',' };
+                          const hint = KB_HINTS[t.id];
+                          const isHovered = hoveredNavRow === t.id;
+                          const isActive = tab === t.id;
+                          return (
+                            <button
+                              key={t.id}
+                              onClick={() => setTab(t.id)}
+                              onMouseEnter={() => setHoveredNavRow(t.id)}
+                              onMouseLeave={() => setHoveredNavRow(null)}
+                              style={{ display: 'flex', alignItems: 'center', gap: 0, width: '100%', padding: '6px 10px 6px 6px', border: 'none', background: isActive ? 'rgba(99,102,241,0.1)' : isHovered ? 'rgba(255,255,255,0.04)' : 'transparent', cursor: 'pointer', fontFamily: 'inherit', borderRadius: 6, marginBottom: 1, textAlign: 'left', transition: 'background 150ms ease' }}
+                            >
+                              {/* Spring-based active indicator — transitions with overshoot */}
+                              <div style={{
+                                width: 3, alignSelf: 'stretch', borderRadius: 2,
+                                background: isActive ? '#6366f1' : 'transparent',
+                                flexShrink: 0, marginRight: 8,
+                                transition: 'background 250ms cubic-bezier(0.34,1.56,0.64,1), transform 250ms cubic-bezier(0.34,1.56,0.64,1)',
+                                transform: isActive ? 'scaleY(1)' : 'scaleY(0.4)',
+                              }} />
+                              <span style={{ fontSize: 12, fontWeight: isActive ? 600 : 400, color: isActive ? '#a5b4fc' : '#64748b', flex: 1, transition: 'color 150ms ease' }}>{t.l}</span>
+                              {hint && isHovered && (
+                                <span style={{ fontSize: 10, color: '#8b95b8', background: '#5a6280', borderRadius: 4, padding: '1px 5px', fontFamily: "'JetBrains Mono',monospace", flexShrink: 0, opacity: isHovered ? 1 : 0, transition: 'opacity 150ms ease' }}>{hint}</span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* ── Footer ── */}
+            <div style={{ borderTop: '1px solid rgba(255,255,255,0.04)', padding: effectiveCollapsed ? '10px 0' : '10px 14px', flexShrink: 0 }}>
+              {/* Offline / back-online indicator */}
+              {!isOnline && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: effectiveCollapsed ? 0 : 6, justifyContent: effectiveCollapsed ? 'center' : 'flex-start' }}>
+                  <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="#5a6280" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.56 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/>
+                  </svg>
+                  {!effectiveCollapsed && <span style={{ fontSize: 10, color: '#5a6280' }}>Offline</span>}
+                </div>
+              )}
+              {showBackOnline && (
+                <div style={{ fontSize: 10, color: '#22c98a', marginBottom: 6, animation: 'backOnlineFade 2s ease forwards', display: effectiveCollapsed ? 'none' : 'block' }}>
+                  ✓ Back online
+                </div>
+              )}
+              {/* Sync status */}
+              {!effectiveCollapsed && (
+                <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 5, fontSize: 10 }}>
+                  {!authUser && <span style={{ color: '#334155' }}>Local only</span>}
+                  {authUser && syncStatus === 'syncing' && isOnline && <span className="sync-syncing" style={{ color: '#f59e0b' }}>Syncing…</span>}
+                  {authUser && syncStatus === 'synced' && isOnline && <span style={{ color: '#34d399', cursor: 'pointer' }} title={lastSynced ? `Last synced ${new Date(lastSynced).toLocaleTimeString()}` : 'Synced'} onClick={handleSyncNow}>✓ Synced</span>}
+                  {authUser && (!isOnline || syncStatus === 'offline') && <span style={{ color: '#5a6280' }}>Sync paused</span>}
+                  {historyLimitActive && !effectiveCollapsed && (
+                    <button onClick={() => setUpgradeOpen(true)} style={{ marginLeft: 'auto', background:'none', border:'none', color:'#fbbf24', fontSize:9, fontWeight:700, cursor:'pointer', padding:0 }}>Month only ↑</button>
+                  )}
+                </div>
+              )}
+
+              {/* User pill */}
+              {!effectiveCollapsed && authUser && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', marginBottom: 8 }}>
+                  <div style={{ width: 22, height: 22, borderRadius: '50%', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: 'white', flexShrink: 0 }}>
+                    {authUser.email[0].toUpperCase()}
+                  </div>
+                  <span style={{ fontSize: 11, color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{authUser.email}</span>
+                </div>
+              )}
+
+              {/* Upgrade card (free tier only) */}
+              {!effectiveCollapsed && userTier === 'free' && (
+                <button onClick={() => setUpgradeOpen(true)} style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg,rgba(99,102,241,0.2),rgba(139,92,246,0.2))', fontFamily: 'inherit', textAlign: 'left' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#a5b4fc', marginBottom: 2 }}>✨ Upgrade to Pro</div>
+                  <div style={{ fontSize: 10, color: '#6366f1' }}>12 months of history + AI insights</div>
+                </button>
+              )}
+
+              {/* Collapsed: small upgrade dot */}
+              {effectiveCollapsed && userTier === 'free' && (
+                <div style={{ textAlign: 'center' }}>
+                  <button onClick={() => setUpgradeOpen(true)} title="Upgrade to Pro" style={{ background: 'none', border: 'none', fontSize: 14, cursor: 'pointer', color: '#6366f1' }}>✨</button>
+                </div>
+              )}
+            </div>
+
+            {/* ── Collapse toggle (not shown when auto-collapsed by viewport) ── */}
+            {!autoCollapsed && (
+              <button
+                onClick={() => setSidebarCollapsed(c => !c)}
+                title={effectiveCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                style={{ position: 'absolute', top: 20, right: -12, width: 24, height: 24, borderRadius: '50%', background: '#0c0e1a', border: '1px solid rgba(255,255,255,0.1)', color: '#475569', fontSize: 11, cursor: 'col-resize', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1, flexShrink: 0 }}
+              >
+                {effectiveCollapsed ? '›' : '‹'}
+              </button>
             )}
           </div>
-          <button onClick={() => setMenuOpen(o => !o)} style={{ background: "none", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "#94a3b8", fontSize: 18, width: 38, height: 38, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            {menuOpen ? "✕" : "☰"}
-          </button>
-        </div>
-      )}
+        );
+      })()}
 
-      {/* ═══ MOBILE MENU OVERLAY ═══ */}
-      {/* Slides in below the fixed top bar (top: 52px) so the header stays visible */}
-      {isMobile && menuOpen && (
-        <div style={{ position: "fixed", top: 52, left: 0, right: 0, bottom: 0, zIndex: 99, background: "#0b0b17", overflowY: "auto", padding: "16px 12px 48px", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+      {/* ═══ CONTENT HEADER (all viewports) ═══ */}
+      {(() => {
+        const hCollapsed = sidebarCollapsed || autoCollapsed;
+        const hSidebarW = sidebarHidden ? 0 : (hCollapsed ? 64 : 240);
+        const currentTabInfo = tabGroups.flatMap(g => g.tabs).find(t => t.id === tab);
+        const tabLabel = currentTabInfo?.l?.replace(/^[^\p{L}\d(]+/u, '') || tab;
+        const dr = upData?.dateRange;
+        const drLabel = dr ? `${dr.start} – ${dr.end}` : 'Jul 2024 – Feb 2025';
+        const txTotal = isLiveData ? transactions.length : 847;
+        const headerSubtitle = (() => {
+          switch (tab) {
+            case 'overview': return `${drLabel} · ${txTotal.toLocaleString()} transactions`;
+            case 'planner': return 'Monthly budget planner';
+            case 'networth': return `Last snapshot: ${new Date().toLocaleDateString('en-AU', { month: 'short', year: 'numeric' })}`;
+            case 'property': return 'Property & mortgage overview';
+            case 'committed': return 'Fixed & semi-fixed expenses';
+            case 'categories': return 'Spending by category';
+            case 'health': return 'Medical & wellness spending';
+            case 'subscriptions': return 'Recurring subscriptions';
+            case 'savings': return 'Savings & emergency buffer';
+            case 'insights': return 'Patterns, days & category trends';
+            case 'deep': return 'Advanced financial analytics';
+            case 'trend': return `${pnl.length} months · ${isLiveData ? 'Live data' : 'Demo data'}`;
+            case 'heatmap': return 'Daily spending heatmap';
+            case 'search': return `${txTotal.toLocaleString()} transactions · ${uncatCount} uncategorised`;
+            case 'goals': {
+              const n = goals.length;
+              if (n === 0) return 'No goals set yet';
+              return `${n} goal${n !== 1 ? 's' : ''} · $${goalTotalSaved.toLocaleString()} of $${goalTotalTarget.toLocaleString()} saved`;
+            }
+            case 'tax': return 'Australian income tax calculator';
+            case 'compare': return 'Income & lifestyle comparison';
+            case 'growth': return 'Investment & compound growth';
+            case 'settings': return authUser?.email ? `Signed in as ${authUser.email}` : (isLiveData ? `${bankTxCount.toLocaleString()} transactions loaded` : 'Demo data');
+            default: return '';
+          }
+        })();
+        if (isMobile) return (
+          <div id="header-strip" style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 48, background: '#0c0e1a', borderBottom: '1px solid rgba(255,255,255,0.06)', padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 45 }}>
+            {/* Left: tab name only */}
+            <div style={{ fontFamily: "'DM Sans','Instrument Sans',sans-serif", fontSize: 15, fontWeight: 600, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, minWidth: 0 }}>{tabLabel}</div>
+            {/* Right: search + AI chat */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+              <button
+                onClick={() => { setSearchQuery(''); setTab('search'); }}
+                title="Search"
+                style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}
+              >🔍</button>
+              <button
+                className="chat-fab"
+                onClick={() => { setChatOpen(o => !o); setChatUnread(false); }}
+                title="AI Chat"
+                style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg,#4f6ef7,#7c3aed)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, boxShadow: '0 2px 12px rgba(79,110,247,0.35)', position: 'relative', transition: 'transform 0.15s' }}>
+                {chatOpen ? '✕' : '🤖'}
+                {chatUnread && !chatOpen && (
+                  <span style={{ position: 'absolute', top: 0, right: 0, width: 9, height: 9, borderRadius: '50%', background: '#34d399', border: '2px solid #0b0b17' }} />
+                )}
+              </button>
+            </div>
+          </div>
+        );
+
+        return (
+          <div id="header-strip" style={{ position: 'fixed', top: 0, left: hSidebarW, right: 0, height: 56, background: '#0c0e1a', borderBottom: '1px solid rgba(255,255,255,0.06)', padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 45, transition: 'left 200ms ease' }}>
+            {/* Left: hamburger (tablet) + tab name + subtitle */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>
+              {sidebarHidden && !isMobile && (
+                <button onClick={() => setMenuOpen(o => !o)} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: '#94a3b8', fontSize: 16, width: 36, height: 36, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  {menuOpen ? '✕' : '☰'}
+                </button>
+              )}
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontFamily: "'DM Sans','Instrument Sans',sans-serif", fontSize: 15, fontWeight: 600, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tabLabel}</div>
+                {headerSubtitle && <div style={{ fontSize: 12, color: '#5a6280', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 1 }}>{headerSubtitle}</div>}
+              </div>
+            </div>
+            {/* Right: AI chat button */}
+            <button
+              className="chat-fab"
+              onClick={() => { setChatOpen(o => !o); setChatUnread(false); }}
+              title="AI Chat"
+              style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg,#4f6ef7,#7c3aed)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, boxShadow: '0 2px 12px rgba(79,110,247,0.35)', flexShrink: 0, marginLeft: 12, position: 'relative', transition: 'transform 0.15s' }}>
+              {chatOpen ? '✕' : '🤖'}
+              {chatUnread && !chatOpen && (
+                <span style={{ position: 'absolute', top: 0, right: 0, width: 9, height: 9, borderRadius: '50%', background: '#34d399', border: '2px solid #0b0b17' }} />
+              )}
+            </button>
+          </div>
+        );
+      })()}
+
+      {/* ═══ MENU OVERLAY (< 1024px) ═══ */}
+      {sidebarHidden && !isMobile && menuOpen && (
+        <div style={{ position: "fixed", top: 56, left: 0, right: 0, bottom: 0, zIndex: 99, background: "#0b0b17", overflowY: "auto", padding: "16px 12px 48px", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
           <SidebarContent onSelect={() => setMenuOpen(false)} />
         </div>
       )}
 
+      {/* ═══ MOBILE BOTTOM NAV ═══ */}
+      {isMobile && (
+        <>
+          {/* Click-outside backdrop to dismiss secondary bar */}
+          {mobileNavGroup && (
+            <div
+              onClick={() => setMobileNavGroup(null)}
+              style={{ position: 'fixed', inset: 0, zIndex: 88 }}
+            />
+          )}
+
+          {/* Secondary sub-tab pills bar */}
+          {mobileNavGroup && (() => {
+            const group = tabGroups.find(g => g.label === mobileNavGroup);
+            if (!group || group.tabs.length <= 1) return null;
+            return (
+              <div style={{
+                position: 'fixed',
+                bottom: 60,
+                left: 0,
+                right: 0,
+                height: 40,
+                background: 'rgba(12,14,26,0.95)',
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
+                borderTop: '1px solid rgba(255,255,255,0.06)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                paddingLeft: 12,
+                paddingRight: 12,
+                overflowX: 'auto',
+                scrollbarWidth: 'none',
+                msOverflowStyle: 'none',
+                zIndex: 91,
+                transform: 'translateY(0)',
+                animation: 'slideUpBar 0.18s ease',
+              }}>
+                {group.tabs.map(t => (
+                  <button
+                    key={t.id}
+                    onClick={() => { setTab(t.id); setMobileNavGroup(null); }}
+                    style={{
+                      flexShrink: 0,
+                      padding: '4px 12px',
+                      borderRadius: 20,
+                      border: tab === t.id ? '1px solid rgba(99,102,241,0.4)' : '1px solid rgba(255,255,255,0.08)',
+                      background: tab === t.id ? 'rgba(99,102,241,0.18)' : 'rgba(255,255,255,0.04)',
+                      color: tab === t.id ? '#818cf8' : '#64748b',
+                      fontSize: 11,
+                      fontWeight: 600,
+                      fontFamily: 'inherit',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {t.l}
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
+
+          {/* Bottom nav bar */}
+          <div id="bottom-bar-mobile" style={{
+            position: 'fixed',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: 60,
+            background: '#0c0e1a',
+            borderTop: '1px solid rgba(255,255,255,0.06)',
+            display: 'flex',
+            justifyContent: 'space-around',
+            alignItems: 'center',
+            zIndex: 90,
+          }}>
+            {tabGroups.map(group => {
+              const isActiveGroup = group.tabs.some(t => t.id === tab);
+              const isOpen = mobileNavGroup === group.label;
+              const isTapping = mobTapGroup === group.label;
+              return (
+                <button
+                  key={group.label}
+                  onClick={() => {
+                    setMobTapGroup(group.label);
+                    setTimeout(() => setMobTapGroup(null), 150);
+                    if (group.tabs.length === 1) {
+                      setTab(group.tabs[0].id);
+                      setMobileNavGroup(null);
+                    } else {
+                      setMobileNavGroup(isOpen ? null : group.label);
+                    }
+                  }}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 2,
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '6px 8px',
+                    fontFamily: 'inherit',
+                    animation: isTapping ? 'mobTapBounce 150ms ease' : 'none',
+                  }}
+                >
+                  <span style={{ fontSize: 18, lineHeight: 1, filter: isActiveGroup || isOpen ? 'none' : 'grayscale(0.6) opacity(0.55)', transition: 'filter 150ms ease' }}>{group.icon}</span>
+                  <span style={{ fontSize: 9, color: (isActiveGroup || isOpen) ? '#6366f1' : '#5a6280', fontWeight: isActiveGroup || isOpen ? 700 : 500, transition: 'color 150ms ease' }}>{group.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+
       {/* ═══ MAIN CONTENT ═══ */}
-      <div style={{ flex: 1, padding: isMobile ? "64px 16px 48px" : "22px 24px 48px", minWidth: 0 }}>
+      <div className="main-content" style={{ flex: 1, padding: isMobile ? `60px 16px 80px` : sidebarHidden ? `72px 16px 48px` : "72px 24px 48px", minWidth: 0, marginLeft: sidebarHidden ? 0 : ((sidebarCollapsed || autoCollapsed) ? 64 : 240), transition: 'margin-left 200ms ease' }}>
+
+      {/* Print-only header/footer */}
+      <div className="print-header">
+        <span style={{ fontWeight:800, fontSize:20, color:'#1a1a1a', fontFamily:"'DM Sans',sans-serif" }}>,</span>
+        <span style={{ fontWeight:700, fontSize:16, color:'#1a1a1a', fontFamily:"'DM Sans',sans-serif" }}>Comma · getcomma.com.au</span>
+        <span style={{ marginLeft:'auto', fontSize:11, color:'#666', fontFamily:"'DM Sans',sans-serif" }}>{new Date().toLocaleDateString('en-AU',{day:'numeric',month:'long',year:'numeric'})}</span>
+      </div>
 
       {/* ─── Categorisation nudge banner ─── */}
       {showCatHint && isLiveData && uncatCount > 0 && (
@@ -3051,6 +4239,22 @@ function DashboardInner() {
           </button>
         </div>
       )}
+
+      {/* ─── Skeleton screen: shown during CSV parse (>200ms) on the overview ─── */}
+      {isDataParsing && tab === 'overview' && (
+        <div className="overview-grid" style={{ pointerEvents: 'none' }}>
+          {[{ h: 80, span: '1/-1' }, { h: 140 }, { h: 140 }, { h: 200 }, { h: 140 }, { h: 200, span: '1/-1' }].map((s, i) => (
+            <div key={i} className="skeleton-shimmer" style={{
+              height: s.h, borderRadius: 14,
+              gridColumn: s.span || undefined,
+              background: 'rgba(255,255,255,0.03)',
+            }} />
+          ))}
+        </div>
+      )}
+
+      {/* ─── Tab content wrapper — keyed so React remounts on tab change, triggering fadeSlideIn ─── */}
+      <div key={tab} style={{ animation: 'fadeSlideIn 150ms ease-out', display: isDataParsing && tab === 'overview' ? 'none' : undefined }}>
 
       {/* ═══ PLANNER ═══ */}
       {tab === "planner" && (<div>
@@ -3146,69 +4350,553 @@ function DashboardInner() {
       </div>)}
 
       {/* ═══ OVERVIEW ═══ */}
-      {tab === "overview" && (<div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {upData ? (
-            <>
-              <St label="Avg Income" value={"$" + avgMonthlyIncome.toLocaleString()} sub="/mo" accent="#34d399" />
-              <St label="Avg Spending" value={"$" + avgMonthlySpend.toLocaleString()} sub="/mo" accent="#f87171" />
-              <St label="Avg Net" value={(avgMonthlyNet>=0?"$":"-$") + Math.abs(avgMonthlyNet).toLocaleString()} sub="/mo" accent={avgMonthlyNet>=0?"#fbbf24":"#f87171"} />
-            </>
-          ) : (
-            <>
-              <St label="Net Worth" value={"$" + NW_NOW.toLocaleString()} accent="#34d399" />
-              <St label="Surplus" value={"$" + DISC.toLocaleString()} sub="Forward" accent="#fbbf24" />
-              <St label="Debt" value={"$" + NW_DEBT.toLocaleString()} accent="#f87171" />
-            </>
-          )}
-        </div>
+      {tab === "overview" && (() => {
+        // ─── CONTEXTUAL ENGINE ─────────────────────────────────────────────
+        const ovNow = new Date();
+        const ovDay = ovNow.getDate();
+        const ovMonth = ovNow.getMonth();
+        const ovTotalDays = new Date(ovNow.getFullYear(), ovMonth + 1, 0).getDate();
+        const ovIsNewMonth = ovDay <= 3;
+        // ovIsEOFY / ovIsWeekend / ovIsLastDay reserved for future hero card variants
 
-        {/* Financial Health Score */}
-        <div style={{ marginTop: 14, background: "linear-gradient(135deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))", border: `1px solid ${healthScore.color}22`, borderRadius: 16, padding: "16px 20px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-            <div style={{ position: "relative", flexShrink: 0 }}>
-              <svg width={80} height={80} viewBox="0 0 80 80">
-                <circle cx={40} cy={40} r={32} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={7} />
-                <circle cx={40} cy={40} r={32} fill="none" stroke={healthScore.color} strokeWidth={7}
-                  strokeDasharray={`${(healthScore.total / 100) * 201} 201`}
-                  strokeLinecap="round" transform="rotate(-90 40 40)" style={{ transition: "stroke-dasharray 0.6s ease" }} />
-              </svg>
-              <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                <div style={{ fontSize: 20, fontWeight: 800, color: healthScore.color, fontFamily: "'JetBrains Mono',monospace", lineHeight: 1 }}>{healthScore.total}</div>
-                <div style={{ fontSize: 11, color: "#475569", fontWeight: 600 }}>{healthScore.grade}</div>
+        // No current month data (live data present but no tx this month)
+        const ovNoCurrentMonth = isLiveData && !transactions.some(tx => tx.date?.startsWith(currentMonthPrefix));
+
+        // Big spending day: today > 2× daily avg
+        const ovBigSpend = todaySpentAmt > 2 * avgDailySpend && avgDailySpend > 0;
+
+        // Goal nearest completion
+        const ovGoalNear = goals.find(g => g.targetAmount > 0 && (g.savedSoFar || 0) / g.targetAmount >= 0.8) ?? null;
+
+        // Savings streak: consecutive trailing months with positive net
+        const ovStreak = (() => {
+          let s = 0;
+          for (let i = pnl.length - 1; i >= 0; i--) { if (pnl[i].n > 0) s++; else break; }
+          return s;
+        })();
+
+        // Unusual category: any spending cat 50%+ above its prior-2-month avg
+        const ovUnusualCat = (() => {
+          if (!isLiveData || transactions.length === 0) return null;
+          const byMonthCat = {};
+          transactions.forEach(tx => {
+            const mo = tx.date?.slice(0, 7);
+            if (!mo || !tx.cat || tx.cat === 'income' || tx.cat === 'personal') return;
+            if ((tx.amount || 0) >= 0) return;
+            if (!byMonthCat[tx.cat]) byMonthCat[tx.cat] = {};
+            byMonthCat[tx.cat][mo] = (byMonthCat[tx.cat][mo] || 0) + Math.abs(tx.amount);
+          });
+          let best = null;
+          Object.entries(byMonthCat).forEach(([cat, monthly]) => {
+            const cur = monthly[currentMonthPrefix];
+            if (!cur) return;
+            const prev = Object.entries(monthly).filter(([m]) => m < currentMonthPrefix).slice(-2);
+            if (prev.length === 0) return;
+            const avgPrev = prev.reduce((s, [, v]) => s + v, 0) / prev.length;
+            const chg = avgPrev > 0 ? (cur - avgPrev) / avgPrev : 0;
+            if (chg >= 0.5 && (!best || chg > best.change)) best = { name: cat, amount: Math.round(cur), change: Math.round(chg * 100) };
+          });
+          return best;
+        })();
+
+        // Net worth trend from snapshots
+        const ovNWTrend = (() => {
+          if (nwSnapshots.length < 2) return 'none';
+          const last = nwSnapshots[nwSnapshots.length - 1].netWorth;
+          const prev = nwSnapshots[nwSnapshots.length - 2].netWorth;
+          const chg = prev !== 0 ? (last - prev) / Math.abs(prev) : 0;
+          return chg > 0.02 ? 'up' : chg < -0.02 ? 'down' : 'stable';
+        })();
+
+        // Recurring charge day: 3+ merchants appearing on the same day-of-month across 3+ months
+        const ovRecurringDay = (() => {
+          if (!isLiveData || transactions.length === 0) return false;
+          const merchantDays = {};
+          transactions.forEach(tx => {
+            if (!tx.date || !tx.amount || tx.amount >= 0) return;
+            const d = parseInt(tx.date.slice(8, 10));
+            const key = (tx.desc || '').toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 20);
+            if (!key) return;
+            if (!merchantDays[key]) merchantDays[key] = new Set();
+            merchantDays[key].add(d);
+          });
+          const near = Object.values(merchantDays).filter(days =>
+            days.size >= 3 && (days.has(ovDay) || days.has(ovDay - 1) || days.has(ovDay + 1))
+          );
+          return near.length >= 3;
+        })();
+
+        // ─── HERO PRIORITY ─────────────────────────────────────────────────
+        let heroPrio = 'default';
+        if (ovNoCurrentMonth) heroPrio = 'noData';
+        else if (ovIsNewMonth && pnl.length >= 2) heroPrio = 'newMonth';
+        else if (ovBigSpend) heroPrio = 'bigSpend';
+        else if (ovRecurringDay) heroPrio = 'recurring';
+        else if (ovGoalNear) heroPrio = 'goalNear';
+        else if (ovStreak >= 2) heroPrio = 'streak';
+
+        // ─── CURRENT MONTH STATS ───────────────────────────────────────────
+        const ovCurIncome = isLiveData
+          ? Math.round(transactions.filter(tx => tx.date?.startsWith(currentMonthPrefix) && (tx.amount || 0) > 0).reduce((s, tx) => s + tx.amount, 0))
+          : (pnl.length > 0 ? pnl[pnl.length - 1].i : 0);
+        const ovCurNet = ovCurIncome - currentMonthSpend;
+        const ovDaysLeft = ovTotalDays - ovDay;
+        const ovProjected = isLiveData && daysElapsed > 0
+          ? Math.round(ovCurNet + (ovCurNet / daysElapsed) * ovDaysLeft)
+          : null;
+
+        // Last / prev month for newMonth hero
+        const ovLastMo = pnl.length >= 1 ? pnl[pnl.length - 1] : null;
+        const ovPrevMo = pnl.length >= 2 ? pnl[pnl.length - 2] : null;
+        const ovLastMoName = new Date(ovNow.getFullYear(), ovMonth - 1, 1).toLocaleString('en-AU', { month: 'long' });
+
+        // Today's top transactions for bigSpend hero
+        const ovTodayTxs = isLiveData
+          ? transactions.filter(tx => tx.date === todayStr && (tx.amount || 0) < 0).sort((a, b) => a.amount - b.amount).slice(0, 3)
+          : [];
+        const ovTodayTotal = ovTodayTxs.reduce((s, tx) => s + Math.abs(tx.amount || 0), 0);
+        const ovTodayMult = avgDailySpend > 0 ? (ovTodayTotal / avgDailySpend).toFixed(1) : null;
+
+        // Net worth widget
+        const ovLastSnap = nwSnapshots.length > 0 ? nwSnapshots[nwSnapshots.length - 1] : null;
+        const ovPrevSnap = nwSnapshots.length > 1 ? nwSnapshots[nwSnapshots.length - 2] : null;
+        const ovNWChange = ovLastSnap && ovPrevSnap ? ovLastSnap.netWorth - ovPrevSnap.netWorth : null;
+        const ovPrevNWLabel = ovPrevSnap ? new Date(ovPrevSnap.date).toLocaleString('en-AU', { month: 'short' }) : null;
+        const ovCurNW = ovLastSnap?.netWorth ?? NW_NOW;
+
+        // Top categories this month
+        const ovTopCats = (() => {
+          if (!isLiveData) return [];
+          const totals = {};
+          transactions.forEach(tx => {
+            if (!tx.date?.startsWith(currentMonthPrefix)) return;
+            if (!tx.cat || tx.cat === 'income' || tx.cat === 'personal') return;
+            if ((tx.amount || 0) >= 0) return;
+            totals[tx.cat] = (totals[tx.cat] || 0) + Math.abs(tx.amount);
+          });
+          return Object.entries(totals).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([cat, amt]) => ({ cat, amt: Math.round(amt) }));
+        })();
+        const ovMaxCat = ovTopCats[0]?.amt || 1;
+
+        // Recent transactions (last 8)
+        const ovRecentTxs = transactions.slice(0, 8);
+        const ovFmtRelDate = (ds) => {
+          if (!ds) return '';
+          const diff = Math.floor((new Date(todayStr) - new Date(ds)) / 86400000);
+          if (diff === 0) return 'Today';
+          if (diff === 1) return 'Yesterday';
+          if (diff < 7) return new Date(ds + 'T00:00:00').toLocaleDateString('en-AU', { weekday: 'short' });
+          return new Date(ds + 'T00:00:00').toLocaleDateString('en-AU', { month: 'short', day: 'numeric' });
+        };
+
+        // Category label map
+        const OV_CAT = { grocery:'Groceries', dining:'Dining', restaurant:'Dining', takeaway:'Takeaway', transport:'Transport', health:'Health', subscription:'Subscriptions', shopping:'Shopping', entertainment:'Entertainment', utilities:'Utilities', fuel:'Fuel', insurance:'Insurance', paypal:'PayPal', other:'Other' };
+        const ovFmtCat = (c) => OV_CAT[c] || (c ? c.charAt(0).toUpperCase() + c.slice(1) : 'Other');
+
+        // Deterministic daily insight
+        const ovDayHash = parseInt(todayStr.replace(/-/g, '')) % 8;
+        const ovInsightPool = [];
+        if (isLiveData) {
+          if (ovStreak >= 2) ovInsightPool.push(`You've had ${ovStreak} surplus months in a row. That's momentum.`);
+          if (healthScore.savingsRate > 0.15) ovInsightPool.push(`Your savings rate would put you in the top 20% of Australians.`);
+          const diningCat = ovTopCats.find(c => c.cat === 'dining' || c.cat === 'restaurant');
+          if (diningCat) ovInsightPool.push(`Dining is your ${ovTopCats.findIndex(c => c.cat === 'dining' || c.cat === 'restaurant') < 2 ? 'top' : 'fastest-growing'} spending category this month.`);
+          if (goals.length > 0 && actualAvgSavings && actualAvgSavings > 0) {
+            const g = goals[0];
+            const rem = (g.targetAmount || 0) - (g.savedSoFar || 0);
+            if (rem > 0) {
+              const mo = Math.ceil(rem / actualAvgSavings);
+              const projD = new Date(ovNow.getFullYear(), ovMonth + mo, 1);
+              ovInsightPool.push(`At this rate, ${g.name} completes around ${projD.toLocaleString('en-AU', { month: 'long', year: 'numeric' })}.`);
+            }
+          }
+          if (liveSunAvg && liveMonAvg && liveMonAvg > 0) {
+            const pct = Math.round(Math.abs(liveSunAvg - liveMonAvg) / liveMonAvg * 100);
+            if (pct > 10) ovInsightPool.push(`You spend ${pct}% ${liveSunAvg < liveMonAvg ? 'less' : 'more'} on weekends than weekdays this month.`);
+          }
+        }
+        if (ovInsightPool.length === 0) ovInsightPool.push('Upload your bank CSV to unlock personalised insights.');
+        const ovDailyInsight = ovInsightPool[ovDayHash % ovInsightPool.length];
+
+        // Closest goal to completion
+        const ovClosestGoal = goals.length > 0
+          ? goals.reduce((best, g) => {
+              const p = g.targetAmount > 0 ? (g.savedSoFar || 0) / g.targetAmount : 0;
+              const bp = best.targetAmount > 0 ? (best.savedSoFar || 0) / best.targetAmount : 0;
+              return p > bp ? g : best;
+            })
+          : null;
+
+        // ─── WIDGET ORDER ──────────────────────────────────────────────────
+        const ovWidgets = ['cashflow', 'categories', 'networth', 'goals', 'transactions', 'healthscore'];
+        if (ovGoalNear) {
+          const idx = ovWidgets.indexOf('goals');
+          if (idx > 0) { ovWidgets.splice(idx, 1); ovWidgets.unshift('goals'); }
+        } else if (uncatCount > 5) {
+          const idx = ovWidgets.indexOf('transactions');
+          if (idx > 0) { ovWidgets.splice(idx, 1); ovWidgets.unshift('transactions'); }
+        } else if (ovNWTrend === 'up' && ovNWChange && ovPrevSnap && ovPrevSnap.netWorth !== 0 && (ovNWChange / Math.abs(ovPrevSnap.netWorth)) > 0.05) {
+          const idx = ovWidgets.indexOf('networth');
+          if (idx > 0) { ovWidgets.splice(idx, 1); ovWidgets.unshift('networth'); }
+        }
+
+        // Widget title style
+        const ovTitleStyle = { fontSize: 11, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 };
+
+        // ─── HERO CARD ─────────────────────────────────────────────────────
+        const heroBase = {
+          gridColumn: '1 / -1',
+          background: 'rgba(255,255,255,0.03)',
+          borderLeft: '3px solid rgba(79,110,247,0.5)',
+          borderRight: '1px solid rgba(255,255,255,0.06)',
+          borderTop: '1px solid rgba(255,255,255,0.06)',
+          borderBottom: '1px solid rgba(255,255,255,0.06)',
+          borderRadius: 14,
+          padding: 32,
+          // First upload bloom — box-shadow expands then settles
+          ...(firstBloom ? { animation: 'bloomBorder 1.2s ease-out both' } : {}),
+        };
+
+        const renderHero = () => {
+          if (heroPrio === 'noData') {
+            const lastFile = uploadedFiles.filter(f => f.status === 'success').at(-1);
+            const lastMoLabel = lastFile?.dateRange?.end
+              ? new Date(lastFile.dateRange.end).toLocaleString('en-AU', { month: 'long', year: 'numeric' })
+              : null;
+            return (
+              <div style={{ ...heroBase, position: 'relative', overflow: 'hidden' }} className="ov-span3">
+                <div style={{ position: 'absolute', inset: 0, borderRadius: 14, pointerEvents: 'none', background: 'radial-gradient(ellipse at 20% 50%, rgba(79,110,247,0.03) 0%, transparent 60%), radial-gradient(ellipse at 80% 20%, rgba(167,139,250,0.03) 0%, transparent 60%)', animation: 'gradMesh 20s ease infinite', backgroundSize: '200% 200%' }} />
+                <div style={{ fontSize: 18, fontWeight: 600, color: '#f1f5f9', marginBottom: 8 }}>Time for a fresh upload</div>
+                {lastMoLabel && <div style={{ fontSize: 13, color: '#64748b', marginBottom: 20 }}>Your last data is from {lastMoLabel}. Drop in your latest CSV to keep your dashboard current.</div>}
+                <button onClick={() => setTab('settings')} style={{ background: 'linear-gradient(135deg,#4f6ef7,#7c3aed)', border: 'none', borderRadius: 10, padding: '10px 22px', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Upload CSV</button>
+              </div>
+            );
+          }
+
+          if (heroPrio === 'newMonth' && ovLastMo) {
+            const vsNet = ovPrevMo ? ovLastMo.n - ovPrevMo.n : null;
+            return (
+              <div style={heroBase} className="ov-span3">
+                <div style={{ fontSize: 18, fontWeight: 600, color: '#f1f5f9', marginBottom: 16 }}>Here's how {ovLastMoName} went</div>
+                <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>
+                  {[
+                    { label: 'Income', val: ovLastMo.i, color: '#34d399' },
+                    { label: 'Spending', val: ovLastMo.s, color: '#f87171' },
+                    { label: 'Net', val: ovLastMo.n, color: ovLastMo.n >= 0 ? '#34d399' : '#f87171', signed: true },
+                    vsNet !== null ? { label: 'vs prior month', val: vsNet, color: vsNet >= 0 ? '#34d399' : '#f87171', signed: true } : null,
+                  ].filter(Boolean).map(({ label, val, color, signed }) => (
+                    <div key={label}>
+                      <div style={{ fontSize: 11, color: '#475569', marginBottom: 2 }}>{label}</div>
+                      <div style={{ fontSize: 18, fontWeight: 700, color, fontFamily: "'JetBrains Mono',monospace" }}>
+                        {signed && val >= 0 ? '+' : signed && val < 0 ? '-' : ''}${Math.abs(val).toLocaleString()}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          }
+
+          if (heroPrio === 'bigSpend') {
+            return (
+              <div style={heroBase} className="ov-span3">
+                <div style={{ fontSize: 18, fontWeight: 600, color: '#f1f5f9', marginBottom: 4 }}>
+                  Busy day — ${ovTodayTotal.toLocaleString()} across {ovTodayTxs.length} transaction{ovTodayTxs.length !== 1 ? 's' : ''} so far
+                </div>
+                {ovTodayMult && <div style={{ fontSize: 12, color: '#64748b', marginBottom: 14 }}>That's {ovTodayMult}× your daily average</div>}
+                {ovTodayTxs.map((tx, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#94a3b8', marginBottom: 5 }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 12 }}>{tx.desc}</span>
+                    <span style={{ color: '#f87171', fontFamily: "'JetBrains Mono',monospace", flexShrink: 0 }}>${Math.abs(tx.amount).toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          }
+
+          if (heroPrio === 'recurring') {
+            const recurringItems = (() => {
+              if (!isLiveData) return [];
+              const seen = new Set();
+              return transactions
+                .filter(tx => {
+                  if (!tx.date || !tx.amount || tx.amount >= 0) return false;
+                  const d = parseInt(tx.date.slice(8, 10));
+                  return Math.abs(d - ovDay) <= 1;
+                })
+                .filter(tx => {
+                  const key = (tx.desc || '').toLowerCase().trim().slice(0, 20);
+                  if (seen.has(key)) return false;
+                  seen.add(key);
+                  return true;
+                })
+                .slice(0, 4);
+            })();
+            const recurringTotal = recurringItems.reduce((s, tx) => s + Math.abs(tx.amount || 0), 0);
+            return (
+              <div style={heroBase} className="ov-span3">
+                <div style={{ fontSize: 18, fontWeight: 600, color: '#f1f5f9', marginBottom: 4 }}>Heads up — recurring charges typically hit around today</div>
+                <div style={{ fontSize: 12, color: '#64748b', marginBottom: 14 }}>${recurringTotal.toLocaleString()} in recurring charges expected</div>
+                {recurringItems.map((tx, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#94a3b8', marginBottom: 5 }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 12 }}>{tx.desc}</span>
+                    <span style={{ color: '#64748b', fontFamily: "'JetBrains Mono',monospace", flexShrink: 0 }}>${Math.abs(tx.amount).toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          }
+
+          if (heroPrio === 'goalNear' && ovGoalNear) {
+            const pct = Math.round((ovGoalNear.savedSoFar || 0) / ovGoalNear.targetAmount * 100);
+            const rem = (ovGoalNear.targetAmount || 0) - (ovGoalNear.savedSoFar || 0);
+            return (
+              <div style={heroBase} className="ov-span3">
+                <div style={{ fontSize: 18, fontWeight: 600, color: '#f1f5f9', marginBottom: 10 }}>
+                  Almost there — {ovGoalNear.emoji} {ovGoalNear.name} is {pct}% complete
+                </div>
+                <div style={{ marginBottom: 10, maxWidth: 400 }}>
+                  <GoalProgressBar pct={pct} height={8} radius={4} />
+                </div>
+                <div style={{ fontSize: 12, color: '#64748b' }}>Just ${rem.toLocaleString()} to go</div>
+              </div>
+            );
+          }
+
+          if (heroPrio === 'streak') {
+            const streakPnl = pnl.slice(-Math.min(ovStreak, 6));
+            const streakMax = Math.max(...streakPnl.map(m => m.n), 1);
+            return (
+              <div style={heroBase} className="ov-span3">
+                <div style={{ fontSize: 18, fontWeight: 600, color: '#f1f5f9', marginBottom: 4 }}>
+                  🔥 That's{' '}
+                  <span style={{ color: '#a5b4fc', animation: ovStreak % 3 === 0 ? 'streakGlow 600ms ease-in-out' : 'none' }}>{ovStreak}</span>
+                  {' '}months in a row with a surplus
+                </div>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end', marginTop: 14 }}>
+                  {streakPnl.map((m, i) => (
+                    <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                      <div style={{ width: 28, borderRadius: 3, background: 'linear-gradient(to top,#4f6ef7,#34d399)', height: Math.max(6, Math.round((m.n / streakMax) * 40)) }} />
+                      <span style={{ fontSize: 9, color: '#475569' }}>{m.m}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          }
+
+          // Default: "Your month so far"
+          const projColor = ovProjected !== null ? (ovProjected >= 0 ? '#34d399' : '#f87171') : '#64748b';
+          return (
+            <div style={heroBase} className="ov-span3">
+              <div style={{ fontSize: 18, fontWeight: 600, color: '#f1f5f9', marginBottom: 16 }}>Your month so far</div>
+              <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>
+                <div><div style={{ fontSize: 11, color: '#475569', marginBottom: 2 }}>Income</div><div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace" }}><CountUp end={ovCurIncome} prefix="$" duration={500} color="#34d399" /></div></div>
+                <div><div style={{ fontSize: 11, color: '#475569', marginBottom: 2 }}>Spending</div><div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace" }}><CountUp end={currentMonthSpend} prefix="$" duration={500} color="#f87171" /></div></div>
+                <div><div style={{ fontSize: 11, color: '#475569', marginBottom: 2 }}>Net</div><div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", color: ovCurNet >= 0 ? '#34d399' : '#f87171' }}>{ovCurNet >= 0 ? '+' : '-'}<CountUp end={Math.abs(ovCurNet)} prefix="$" duration={500} /></div></div>
+                <div><div style={{ fontSize: 11, color: '#475569', marginBottom: 2 }}>Days left</div><div style={{ fontSize: 18, fontWeight: 700, color: '#94a3b8', fontFamily: "'JetBrains Mono',monospace" }}>{ovDaysLeft}</div></div>
+                {ovProjected !== null && <div><div style={{ fontSize: 11, color: '#475569', marginBottom: 2 }}>Projected</div><div style={{ fontSize: 18, fontWeight: 700, color: projColor, fontFamily: "'JetBrains Mono',monospace" }}>{ovProjected >= 0 ? '+' : '-'}<CountUp end={Math.abs(ovProjected)} prefix="$" duration={500} /></div></div>}
               </div>
             </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#f1f5f9", marginBottom: 10 }}>Financial Health Score</div>
-              {[
-                { label: "Savings rate", val: healthScore.s1, max: 35, color: "#34d399" },
-                { label: "Surplus consistency", val: healthScore.s2, max: 30, color: "#60a5fa" },
-                { label: "Debt ratio", val: healthScore.s3, max: 20, color: "#a78bfa" },
-                { label: "Investing", val: healthScore.s4, max: 15, color: "#fbbf24" },
-              ].map(({ label, val, max, color }) => (
-                <div key={label} style={{ marginBottom: 6 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#64748b", marginBottom: 2 }}>
-                    <span>{label}</span><span style={{ color }}>{Math.round(val)}/{max}</span>
+          );
+        };
+
+        // ─── WIDGET RENDERERS ──────────────────────────────────────────────
+        const renderOvWidget = (id) => {
+          if (id === 'cashflow') return (
+            <div key="cashflow" className="ov-span2 hover-card" style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 14, padding: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <div style={ovTitleStyle}>Cash Flow</div>
+                <div style={{ fontSize: 11, color: '#64748b' }}>
+                  <span style={{ color: '#34d399' }}>${avgMonthlyIncome.toLocaleString()}</span>{' · '}
+                  <span style={{ color: '#f87171' }}>${avgMonthlySpend.toLocaleString()}</span>{' · '}
+                  <span style={{ color: avgMonthlyNet >= 0 ? '#34d399' : '#f87171', fontWeight: 700 }}>{avgMonthlyNet >= 0 ? '+' : ''}${avgMonthlyNet.toLocaleString()}</span>
+                </div>
+              </div>
+              <Ch height={160}><ComposedChart data={pnl.map(d => ({ month: d.m, income: d.i, spending: d.s, net: d.n }))} margin={{ top: 4, right: 8, bottom: 2, left: 0 }}>{gd}<XAxis dataKey="month" {...xP} /><YAxis {...yP} /><Tooltip content={<Tip />} /><Bar dataKey="income" name="Income" fill="#34d399" radius={[3,3,0,0]} barSize={14} opacity={0.7} animationBegin={0} animationDuration={800} /><Bar dataKey="spending" name="Spending" fill="#f87171" radius={[3,3,0,0]} barSize={14} opacity={0.5} animationBegin={200} animationDuration={800} /><Line dataKey="net" name="Net" stroke="#fbbf24" strokeWidth={2} dot={{ fill: '#fbbf24', r: 2.5 }} /><ReferenceLine y={0} stroke="rgba(255,255,255,0.1)" /></ComposedChart></Ch>
+            </div>
+          );
+
+          if (id === 'networth') return (
+            <div key="networth" className="hover-card" onClick={() => setTab('networth')} style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 14, padding: 16, cursor: 'pointer' }}>
+              <div style={ovTitleStyle}>Net Worth</div>
+              <div className={ovNWChange > 0 ? 'nw-float' : ovNWChange < 0 ? 'nw-sink' : ''} style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 22, fontWeight: 700, color: '#f1f5f9', marginBottom: 4 }}>
+                <CountUp end={ovCurNW} prefix="$" duration={600} />
+              </div>
+              {ovNWChange !== null && ovPrevNWLabel && (
+                <div style={{ fontSize: 11, color: ovNWChange >= 0 ? '#34d399' : '#f87171', marginBottom: 10 }}>
+                  {ovNWChange >= 0 ? '↑' : '↓'} ${Math.abs(ovNWChange).toLocaleString()} since {ovPrevNWLabel}
+                </div>
+              )}
+              {nwSnapshots.length < 1 && <div style={{ fontSize: 11, color: '#475569', marginBottom: 8 }}>Save a snapshot to track changes over time</div>}
+              {nwSnapshots.length >= 2 && (
+                <div style={{ height: 36 }}>
+                  <CommaSpark data={nwSnapshots.map(s => ({ day: s.date?.slice(0, 10), cumNet: s.netWorth - nwSnapshots[0].netWorth }))} collapsed={false} />
+                </div>
+              )}
+            </div>
+          );
+
+          if (id === 'categories') return (
+            <div key="categories" className="hover-card" onClick={() => setTab('categories')} style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 14, padding: 16, cursor: 'pointer' }}>
+              <div style={ovTitleStyle}>Top Categories</div>
+              {ovTopCats.length === 0
+                ? <div style={{ fontSize: 12, color: '#475569' }}>Upload CSV to see spending breakdown</div>
+                : ovTopCats.map(({ cat, amt }, idx) => {
+                    const barOpacity = 1 - (idx / ovTopCats.length) * 0.55;
+                    const isUnusual = ovUnusualCat?.name === cat;
+                    return (
+                      <div key={cat} style={{ marginBottom: 9 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+                          <span style={{ fontSize: 11, color: '#94a3b8' }}>{ovFmtCat(cat)}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                            {isUnusual && <span style={{ fontSize: 9, color: '#f59e0b', background: 'rgba(245,158,11,0.12)', borderRadius: 4, padding: '1px 4px' }}>↑{ovUnusualCat.change}%</span>}
+                            <span style={{ fontSize: 11, color: '#e2e8f0', fontFamily: "'JetBrains Mono',monospace" }}>${amt.toLocaleString()}</span>
+                          </div>
+                        </div>
+                        <div style={{ height: 3, borderRadius: 2, background: 'rgba(255,255,255,0.05)' }}>
+                          <div style={{ height: '100%', borderRadius: 2, background: `rgba(79,110,247,${barOpacity})`, width: `${(amt / ovMaxCat) * 100}%`, transition: 'width 0.5s ease' }} />
+                        </div>
+                      </div>
+                    );
+                  })
+              }
+            </div>
+          );
+
+          if (id === 'goals') {
+            if (goals.length === 0) return (
+              <div key="goals" className="hover-card" onClick={() => setTab('goals')} style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 14, padding: 16, cursor: 'pointer' }}>
+                <div style={ovTitleStyle}>Goals</div>
+                <div style={{ fontSize: 12, color: '#4f6ef7', marginBottom: 6 }}>Set a savings goal →</div>
+                <div style={{ fontSize: 11, color: '#334155', lineHeight: 1.5 }}>Goals give your surplus a purpose and keep you motivated month to month.</div>
+              </div>
+            );
+            if (!ovClosestGoal) return null;
+            const gPct = ovClosestGoal.targetAmount > 0 ? Math.round((ovClosestGoal.savedSoFar || 0) / ovClosestGoal.targetAmount * 100) : 0;
+            const gRem = (ovClosestGoal.targetAmount || 0) - (ovClosestGoal.savedSoFar || 0);
+            return (
+              <div key="goals" className="hover-card" onClick={() => setTab('goals')} style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 14, padding: 16, cursor: 'pointer' }}>
+                <div style={ovTitleStyle}>Goal Progress</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                  <span style={{ fontSize: 20 }}>{ovClosestGoal.emoji}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ovClosestGoal.name}</div>
+                    <div style={{ fontSize: 11, color: '#64748b' }}>${(ovClosestGoal.savedSoFar||0).toLocaleString()} / ${(ovClosestGoal.targetAmount||0).toLocaleString()}</div>
                   </div>
-                  <div style={{ height: 4, borderRadius: 2, background: "rgba(255,255,255,0.06)" }}>
-                    <div style={{ height: "100%", borderRadius: 2, background: color, width: `${(val / max) * 100}%`, transition: "width 0.5s ease" }} />
+                  <div style={{ fontSize: 15, fontWeight: 700, color: '#a78bfa', flexShrink: 0 }}>{gPct}%</div>
+                </div>
+                <div style={{ marginBottom: 8 }}>
+                  <GoalProgressBar pct={gPct} height={5} radius={3} />
+                </div>
+                {gRem > 0 && <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>Just ${gRem.toLocaleString()} to go</div>}
+                {goals.length > 1 && <div style={{ fontSize: 11, color: '#4f6ef7' }}>{goals.length - 1} more goal{goals.length > 2 ? 's' : ''} →</div>}
+              </div>
+            );
+          }
+
+          if (id === 'transactions') {
+            if (!isLiveData || ovRecentTxs.length === 0) return null;
+            return (
+              <div key="transactions" className="ov-span2 hover-card" onClick={() => setTab('search')} style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 14, padding: 16, cursor: 'pointer' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <div style={ovTitleStyle}>Recent Transactions</div>
+                  {uncatCount > 0 && <span style={{ fontSize: 10, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', borderRadius: 4, padding: '2px 6px', fontWeight: 700 }}>{uncatCount} uncategorised</span>}
+                </div>
+                {ovRecentTxs.map((tx, i) => (
+                  <div key={tx.id || i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 6px', borderRadius: 6, background: i % 2 === 1 ? 'rgba(255,255,255,0.01)' : 'transparent' }}>
+                    <span style={{ fontSize: 10, color: '#475569', minWidth: 54, flexShrink: 0 }}>{ovFmtRelDate(tx.date)}</span>
+                    <span style={{ fontSize: 11, color: '#94a3b8', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tx.desc}</span>
+                    {tx.cat && tx.cat !== 'other' && <span style={{ fontSize: 9, color: '#4f6ef7', background: 'rgba(79,110,247,0.1)', borderRadius: 10, padding: '1px 6px', flexShrink: 0 }}>{ovFmtCat(tx.cat)}</span>}
+                    <span style={{ fontSize: 11, fontFamily: "'JetBrains Mono',monospace", color: (tx.amount || 0) >= 0 ? '#34d399' : '#f87171', fontWeight: 600, flexShrink: 0, minWidth: 60, textAlign: 'right' }}>
+                      {(tx.amount || 0) >= 0 ? '+' : ''}${Math.abs(tx.amount || 0).toLocaleString()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            );
+          }
+
+          if (id === 'healthscore') return (
+            <div key="healthscore" style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 14, padding: 16 }}>
+              <div style={ovTitleStyle}>Financial Health</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
+                <div style={{ position: 'relative', flexShrink: 0 }}>
+                  <svg width={64} height={64} viewBox="0 0 80 80">
+                    <circle cx={40} cy={40} r={32} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={7} />
+                    <circle cx={40} cy={40} r={32} fill="none" stroke={healthScore.color} strokeWidth={7}
+                      strokeDasharray={`${(healthScore.total / 100) * 201} 201`}
+                      strokeLinecap="round" transform="rotate(-90 40 40)" style={{ transition: 'stroke-dasharray 0.6s ease' }} />
+                  </svg>
+                  <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: healthScore.color, fontFamily: "'JetBrains Mono',monospace", lineHeight: 1 }}>{healthScore.total}</div>
+                    <div style={{ fontSize: 10, color: '#475569', fontWeight: 600 }}>{healthScore.grade}</div>
                   </div>
                 </div>
-              ))}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  {[
+                    { label: 'Savings', val: healthScore.s1, max: 35, color: '#34d399' },
+                    { label: 'Consistency', val: healthScore.s2, max: 30, color: '#60a5fa' },
+                    { label: 'Debt', val: healthScore.s3, max: 20, color: '#a78bfa' },
+                    { label: 'Investing', val: healthScore.s4, max: 15, color: '#fbbf24' },
+                  ].map(({ label, val, max, color }) => (
+                    <div key={label} style={{ marginBottom: 5 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#64748b', marginBottom: 2 }}>
+                        <span>{label}</span><span style={{ color }}>{Math.round(val)}/{max}</span>
+                      </div>
+                      <div style={{ height: 3, borderRadius: 2, background: 'rgba(255,255,255,0.06)' }}>
+                        <div style={{ height: '100%', borderRadius: 2, background: color, width: `${(val/max)*100}%`, transition: 'width 0.5s ease' }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.55, fontStyle: 'italic', marginBottom: 8, minHeight: 30 }}>
+                {userTier === 'free' ? 'Upgrade to Pro for personalised insights' : ovDailyInsight}
+              </div>
+              <button onClick={(e) => { e.stopPropagation(); setTab('insights'); }} style={{ fontSize: 11, color: '#4f6ef7', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>View full breakdown →</button>
             </div>
-          </div>
-        </div>
+          );
 
-        <Sec icon="📊">Cash Flow</Sec>
-        <Ch height={210}><ComposedChart data={pnl.map(d => ({ month: d.m, income: d.i, spending: d.s, net: d.n }))} margin={{ top: 5, right: 12, bottom: 5, left: 4 }}>{gd}<XAxis dataKey="month" {...xP} /><YAxis {...yP} /><Tooltip content={<Tip />} /><Bar dataKey="income" name="Income" fill="#34d399" radius={[3, 3, 0, 0]} barSize={18} opacity={0.7} /><Bar dataKey="spending" name="Spending" fill="#f87171" radius={[3, 3, 0, 0]} barSize={18} opacity={0.5} /><Line dataKey="net" name="Net" stroke="#fbbf24" strokeWidth={2.5} dot={{ fill: "#fbbf24", r: 3.5 }} /><ReferenceLine y={0} stroke="rgba(255,255,255,0.1)" /></ComposedChart></Ch>
-        <Sec icon="💡">Waterfall</Sec>
-        <div style={{ background: "rgba(255,255,255,0.015)", borderRadius: 14, border: "1px solid rgba(255,255,255,0.045)", padding: 16 }}>
-          <Row label="Salary" value={"$" + S.toLocaleString()} color="#34d399" /><Row label="+Medicare" value={"+$" + P.medicareRebateMonthly} color="#a78bfa" /><Row label="=Core" value={"$" + CORE.toLocaleString()} color="#34d399" bold borderTop /><Row label="−Committed" value={"−$" + tC.toLocaleString()} color="#f87171" /><Row label="=After" value={"$" + (CORE - tC).toLocaleString()} color="#fbbf24" bold borderTop /><Row label="−Health" value={"−$" + P.overviewHealthMonthly} color="#06b6d4" /><Row label="−Transport" value={"−$" + P.overviewTransportMonthly} color="#eab308" /><Row label="=Discretionary" value={"$" + DISC.toLocaleString()} color="#f8fafc" bold borderTop />
-        </div>
-        <Note color="#34d399"><span style={{ color: "#34d399", fontWeight: 700 }}>Asset-rich, cash-poor. </span>{"$" + Math.round(NW_NOW/1000)}k net worth but near-breakeven monthly. Use the Planner tab to model scenarios.</Note>
-        <Sec icon="⚡">One-Offs</Sec>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7 }}><Card label={P.vehicleLabel} value={"$" + P.vehiclePurchase.toLocaleString()} type="out" detail={`Via $${(P.topupLoan/1000).toFixed(0)}k top-up`} /><Card label="ATO Refund" value={"$" + P.atoRefund.toLocaleString()} type="in" detail="Jul" /><Card label="Driveway" value={"~$" + P.drivewayCost.toLocaleString()} type="out" detail="Via top-up" /><Card label="Surgery" value={"$" + P.surgeryOop.toLocaleString()} type="out" detail="Sep" /></div>
-      </div>)}
+          return null;
+        };
+
+        if (isMobile) return (
+          <MobileOverviewStory
+            ovCurNet={ovCurNet}
+            ovCurIncome={ovCurIncome}
+            currentMonthSpend={currentMonthSpend}
+            sparkData={sparkData}
+            daysInCurrentMonth={daysInCurrentMonth}
+            isAboveAvgPace={isAboveAvgPace}
+            todaySpentAmt={todaySpentAmt}
+            todayNet={sparkMonthNet}
+            ovTopCats={ovTopCats}
+            ovFmtCat={ovFmtCat}
+            ovRecentTxs={ovRecentTxs}
+            ovFmtRelDate={ovFmtRelDate}
+            uncatCount={uncatCount}
+            ovGoalNear={ovGoalNear}
+            isLiveData={isLiveData}
+            ovNoCurrentMonth={ovNoCurrentMonth}
+            nwSnapshots={nwSnapshots}
+            currentMonthPrefix={currentMonthPrefix}
+            setTab={setTab}
+          />
+        );
+
+        return (
+          <div className="overview-grid">
+            {/* Hero gets entrance index 0 */}
+            {(() => { const h = renderHero(); return h ? React.cloneElement(h, { style: { ...h.props.style, ...cardStyle(0) } }) : null; })()}
+            {ovWidgets.map((id, idx) => {
+              const el = renderOvWidget(id);
+              if (!el) return null;
+              return React.cloneElement(el, { style: { ...el.props.style, ...cardStyle(idx + 1) } });
+            })}
+          </div>
+        );
+      })()}
 
       {/* ═══ NET WORTH ═══ */}
       {tab === "networth" && (() => {
@@ -3403,8 +5091,11 @@ function DashboardInner() {
           {/* ── Net Worth History Chart ── */}
           {(() => {
             if (nwSnapshots.length === 0) return (
-              <div style={{ marginBottom:12, padding:'12px 14px', borderRadius:10, background:'rgba(255,255,255,0.02)', border:'1px solid rgba(255,255,255,0.06)', color:'#64748b', fontSize:12, textAlign:'center', lineHeight:1.6 }}>
-                Save your first snapshot to start tracking your net worth over time.
+              <div style={{ marginBottom:16, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', textAlign:'center', padding:'40px 24px', borderRadius:12, background:'rgba(255,255,255,0.02)', border:'1px solid rgba(255,255,255,0.06)' }}>
+                <div style={{ fontSize:32, marginBottom:12, color:'#5a6280', opacity:0.6 }}>📈</div>
+                <div style={{ fontSize:15, fontWeight:600, color:'#eef0f6', marginBottom:4, fontFamily:"'DM Sans',sans-serif" }}>No snapshots yet</div>
+                <div style={{ fontSize:13, color:'#8b95b8', marginBottom:16, fontFamily:"'DM Sans',sans-serif" }}>Record your assets and debts to track net worth over time</div>
+                <button onClick={()=>{ const btn = document.querySelector('[data-save-snapshot]'); if(btn) btn.click(); }} style={{ padding:'8px 20px', borderRadius:8, background:'transparent', border:'1px solid rgba(99,102,241,0.5)', color:'#818cf8', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>Save first snapshot →</button>
               </div>
             );
             // Free tier: after 1st snapshot, gate the timeline
@@ -3700,7 +5391,11 @@ function DashboardInner() {
         </div>
         {/* Category breakdown */}
         {catData.length === 0 ? (
-          <div style={{ textAlign:"center", padding:"36px 16px", color:"#475569", fontSize:12 }}>No transactions found for selected filters.</div>
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', textAlign:'center', padding:'40px 24px' }}>
+            <div style={{ fontSize:32, marginBottom:12, color:'#5a6280', opacity:0.6 }}>🔍</div>
+            <div style={{ fontSize:15, fontWeight:600, color:'#eef0f6', marginBottom:4, fontFamily:"'DM Sans',sans-serif" }}>No transactions found</div>
+            <div style={{ fontSize:13, color:'#8b95b8', fontFamily:"'DM Sans',sans-serif" }}>Try adjusting the period or payment method filter</div>
+          </div>
         ) : (() => {
           const maxTotal = catData[0]?.total || 1;
           const CAT_COLORS = {grocery:'#22c55e',grocery_delivery:'#4ade80',restaurant:'#ec4899',takeaway:'#f43f5e',coffee:'#f97316',amazon:'#fb923c',sub:'#6366f1',transport:'#60a5fa',fuel:'#facc15',toll:'#fbbf24',health:'#06b6d4',utilities:'#94a3b8',insurance:'#8b5cf6',personal_care:'#e879f9',education:'#34d399',clothing:'#a78bfa',shopping:'#fb923c',entertainment:'#38bdf8',travel:'#f472b6',other:'#475569'};
@@ -3740,7 +5435,7 @@ function DashboardInner() {
         })()}
         {/* Food & Amazon charts (from Variable tab) */}
         <Sec icon="🍔">{`Food ($${P.foodMonthlyBudget}/mo)`}</Sec>
-        <Ch height={180}><BarChart data={food.map(d => ({ month: d.m, restaurants: d.r, takeaway: d.t, groceries: d.g }))}>{gd}<XAxis dataKey="month" {...xP} /><YAxis {...yP} /><Tooltip content={<Tip />} /><Bar dataKey="restaurants" name="Restaurants" stackId="a" fill="#ec4899" barSize={22} /><Bar dataKey="takeaway" name="Takeaway" stackId="a" fill="#f43f5e" barSize={22} /><Bar dataKey="groceries" name="Groceries" stackId="a" fill="#22c55e" radius={[3, 3, 0, 0]} barSize={22} /></BarChart></Ch>
+        <Ch height={180}><BarChart data={food.map(d => ({ month: d.m, restaurants: d.r, takeaway: d.t, groceries: d.g }))}>{gd}<XAxis dataKey="month" {...xP} /><YAxis {...yP} /><Tooltip content={<Tip />} /><Bar dataKey="restaurants" name="Restaurants" stackId="a" fill="#ec4899" barSize={22} animationBegin={0} animationDuration={800} /><Bar dataKey="takeaway" name="Takeaway" stackId="a" fill="#f43f5e" barSize={22} animationBegin={100} animationDuration={800} /><Bar dataKey="groceries" name="Groceries" stackId="a" fill="#22c55e" radius={[3, 3, 0, 0]} barSize={22} animationBegin={200} animationDuration={800} /></BarChart></Ch>
         <Sec icon="📦">{`Amazon ($${P.amazonRecentAvg} recent)`}</Sec>
         <Ch height={150}><BarChart data={amz.map(d => ({ month: d.m, amount: d.v }))}>{gd}<XAxis dataKey="month" {...xP} /><YAxis {...yP} /><Tooltip content={<Tip />} /><Bar dataKey="amount" name="Amazon" fill="#f97316" radius={[4, 4, 0, 0]} barSize={26} /></BarChart></Ch>
       </div>)}
@@ -3750,7 +5445,7 @@ function DashboardInner() {
       {tab === "savings" && (<div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><St label="Drawn" value={"$" + P.savingsDrawn.toLocaleString()} accent="#f87171" /><St label="Avg" value={"$" + P.savingsMonthlyAvg.toLocaleString()} sub="/mo" accent="#fbbf24" /></div>
         <Sec icon="📊">By Source</Sec>
-        <Ch height={190}><BarChart data={sdr.map(d => ({ month: d.m, Investment: d.inv, Savings: d.sav, Other: d.oth }))} margin={{ top: 5, right: 12, bottom: 5, left: 4 }}>{gd}<XAxis dataKey="month" {...xP} /><YAxis {...yP} /><Tooltip content={<Tip />} /><Bar dataKey="Investment" stackId="a" fill="#f87171" barSize={22} /><Bar dataKey="Savings" stackId="a" fill="#fbbf24" barSize={22} /><Bar dataKey="Other" stackId="a" fill="#60a5fa" radius={[3, 3, 0, 0]} barSize={22} /></BarChart></Ch>
+        <Ch height={190}><BarChart data={sdr.map(d => ({ month: d.m, Investment: d.inv, Savings: d.sav, Other: d.oth }))} margin={{ top: 5, right: 12, bottom: 5, left: 4 }}>{gd}<XAxis dataKey="month" {...xP} /><YAxis {...yP} /><Tooltip content={<Tip />} /><Bar dataKey="Investment" stackId="a" fill="#f87171" barSize={22} animationBegin={0} animationDuration={800} /><Bar dataKey="Savings" stackId="a" fill="#fbbf24" barSize={22} animationBegin={100} animationDuration={800} /><Bar dataKey="Other" stackId="a" fill="#60a5fa" radius={[3, 3, 0, 0]} barSize={22} animationBegin={200} animationDuration={800} /></BarChart></Ch>
         <Sec icon="🎯">Strategy</Sec>
         <div style={{ display: "grid", gap: 5 }}>
           {[{ t: "Phase 1: Buffer $2-3k", d: "$400/mo → savings (6 months)", c: "#60a5fa" }, { t: "Phase 2: Split", d: "$200 savings + $200 top-up", c: "#fbbf24" }, { t: "Phase 3: Higher salary", d: "$400 savings + $600 top-up", c: "#34d399" }].map((s, i) => (<div key={i} style={{ padding: 8, borderRadius: 8, background: `${s.c}05`, border: `1px solid ${s.c}10` }}><span style={{ fontSize: 11, fontWeight: 700, color: s.c }}>{s.t}</span><div style={{ fontSize: 10, color: "#94a3b8" }}>{s.d}</div></div>))}
@@ -3946,10 +5641,11 @@ function DashboardInner() {
 
         {/* Empty state */}
         {goals.length===0 && !showGoalForm && (
-          <div style={{ textAlign:'center', padding:'40px 20px' }}>
-            <div style={{ fontSize:38, marginBottom:12, opacity:0.25 }}>🎯</div>
-            <div style={{ fontSize:15, fontWeight:600, color:'#94a3b8', marginBottom:6 }}>No goals yet</div>
-            <div style={{ fontSize:13, color:'#475569', marginBottom:24 }}>Set a savings target and track your progress</div>
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', textAlign:'center', padding:'48px 24px' }}>
+            <div style={{ fontSize:32, marginBottom:12, color:'#5a6280', opacity:0.6 }}>🎯</div>
+            <div style={{ fontSize:15, fontWeight:600, color:'#eef0f6', marginBottom:4, fontFamily:"'DM Sans',sans-serif" }}>No goals yet</div>
+            <div style={{ fontSize:13, color:'#8b95b8', marginBottom:16, fontFamily:"'DM Sans',sans-serif" }}>Set a savings target and track your progress</div>
+            <button onClick={()=>setShowGoalForm(true)} style={{ padding:'8px 20px', borderRadius:8, background:'transparent', border:'1px solid rgba(99,102,241,0.5)', color:'#818cf8', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit', marginBottom:24 }}>Create a goal →</button>
             <div style={{ display:'flex', gap:8, justifyContent:'center', flexWrap:'wrap' }}>
               {GOAL_TEMPLATES.map(t=>(
                 <button key={t.name} onClick={()=>applyGoalTpl(t)}
@@ -3962,12 +5658,13 @@ function DashboardInner() {
         )}
 
         {/* Goal cards */}
-        {goals.map(g=>{
+        {goals.map((g, gi)=>{
           const pct = g.targetAmount>0 ? Math.min(100,Math.round((g.savedSoFar/g.targetAmount)*100)) : 0;
           const proj = goalProjDate(g);
           const isDeleting = deletingGoalId===g.id;
           return (
-            <div key={g.id} style={{ background:'rgba(255,255,255,0.02)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:14, padding:'14px 16px', marginBottom:10 }}>
+            <div key={g.id} style={{ background:'rgba(255,255,255,0.02)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:14, padding:'14px 16px', marginBottom:10, position:'relative', overflow:'visible', ...cardStyle(gi + 1) }}>
+              {pct >= 100 && <GoalConfetti goalId={g.id} />}
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:10 }}>
                 <div style={{ fontSize:14, fontWeight:700, color:'#e2e8f0' }}>{g.emoji} {g.name}</div>
                 <div style={{ display:'flex', alignItems:'center', gap:4 }}>
@@ -3983,9 +5680,7 @@ function DashboardInner() {
                 </div>
               </div>
               <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
-                <div style={{ flex:1, height:8, borderRadius:4, background:'rgba(255,255,255,0.05)', overflow:'hidden' }}>
-                  <div style={{ width:`${pct}%`, height:'100%', borderRadius:4, background:'#4f6ef7', transition:'width 0.4s' }} />
-                </div>
+                <GoalProgressBar pct={pct} height={8} radius={4} />
                 <span style={{ fontSize:11, color:'#64748b', fontFamily:"'JetBrains Mono',monospace", minWidth:32, textAlign:'right' }}>{pct}%</span>
               </div>
               <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, color:'#64748b', marginBottom:4 }}>
@@ -4333,7 +6028,7 @@ function DashboardInner() {
         };
         const confirmPendingRule = () => {
           if (!pendingRule) return;
-          const { tx, cat, editPattern } = pendingRule;
+          const { cat, editPattern } = pendingRule;
           const count = transactions.filter(t => t.desc.toLowerCase().includes(editPattern.toLowerCase())).length;
           addUserRule(editPattern, cat);
           const isFirst = !firstRecatDone;
@@ -4516,13 +6211,13 @@ function DashboardInner() {
         {/* ── Settings mini-nav ── */}
         <div style={{
           position: 'sticky',
-          top: isMobile ? 52 : 0,
-          zIndex: 50,
+          top: 56,
+          zIndex: 44,
           background: '#0b0b17',
-          marginLeft: isMobile ? -16 : -24,
-          marginRight: isMobile ? -16 : -24,
-          paddingLeft: isMobile ? 16 : 24,
-          paddingRight: isMobile ? 16 : 24,
+          marginLeft: sidebarHidden ? -16 : -24,
+          marginRight: sidebarHidden ? -16 : -24,
+          paddingLeft: sidebarHidden ? 16 : 24,
+          paddingRight: sidebarHidden ? 16 : 24,
           paddingTop: 10,
           paddingBottom: 12,
           borderBottom: '1px solid rgba(255,255,255,0.05)',
@@ -5061,6 +6756,12 @@ function DashboardInner() {
       </div>)}
 
       <div style={{ marginTop: 32, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.03)", textAlign: "center" }}><div style={{ color: "#1e293b", fontSize: 9 }}>Up Bank + PayPal + Gateway + CommSec</div></div>
+
+      {/* Print-only footer */}
+      <div className="print-footer">
+        Generated by Comma · {new Date().toLocaleDateString('en-AU',{day:'numeric',month:'long',year:'numeric'})} · getcomma.com.au
+      </div>
+      </div>{/* end tab content wrapper */}
       </div>{/* end main content */}
 
       {/* ═══ COLUMN MAPPING MODAL ═══ */}
@@ -5080,57 +6781,24 @@ function DashboardInner() {
         @keyframes chatDot { 0%,80%,100%{opacity:0.2} 40%{opacity:1} }
         @keyframes fabPulse { 0%{box-shadow:0 4px 20px rgba(79,110,247,0.3)} 50%{box-shadow:0 4px 32px rgba(79,110,247,0.65),0 0 0 8px rgba(79,110,247,0.12)} 100%{box-shadow:0 4px 20px rgba(79,110,247,0.3)} }
         @keyframes syncPulse { 0%,100%{opacity:1} 50%{opacity:0.45} }
+        @keyframes slideUpBar { from{transform:translateY(100%);opacity:0} to{transform:translateY(0);opacity:1} }
         .sync-syncing { animation: syncPulse 1.4s ease-in-out infinite; }
         .chat-fab { animation: fabPulse 2s ease-in-out 3; }
         .chat-fab:hover { transform: scale(1.08) !important; }
       `}</style>
 
-      {/* FAB */}
-      <button
-        className="chat-fab"
-        onClick={() => { setChatOpen(o => !o); setChatUnread(false); }}
-        title="AI Chat"
-        style={{
-          position: 'fixed',
-          bottom: isMobile ? 16 : 24,
-          right: isMobile ? 16 : 24,
-          width: isMobile ? 44 : 52,
-          height: isMobile ? 44 : 52,
-          borderRadius: '50%',
-          background: 'linear-gradient(135deg,#4f6ef7,#7c3aed)',
-          border: 'none',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: isMobile ? 20 : 24,
-          boxShadow: '0 4px 20px rgba(79,110,247,0.3)',
-          zIndex: 9999,
-          transition: 'transform 0.15s',
-          flexShrink: 0,
-        }}
-      >
-        {chatOpen ? '✕' : '🤖'}
-        {chatUnread && !chatOpen && (
-          <span style={{
-            position: 'absolute', top: 2, right: 2,
-            width: 10, height: 10, borderRadius: '50%',
-            background: '#34d399', border: '2px solid #0b0b17',
-          }} />
-        )}
-      </button>
-
       {/* Floating chat panel */}
       {chatOpen && (
-        <div
+        <div className="chat-panel-float"
           onClick={e => { if (e.target === e.currentTarget) { setChatOpen(false); } }}
           style={{
             position: 'fixed',
-            bottom: isMobile ? 0 : 88,
+            top: isMobile ? undefined : 64,
+            bottom: isMobile ? 0 : undefined,
             right: isMobile ? 0 : 24,
             width: isMobile ? '100vw' : 400,
             height: isMobile ? '95vh' : undefined,
-            maxHeight: isMobile ? '95vh' : '70vh',
+            maxHeight: isMobile ? '95vh' : 'calc(100vh - 80px)',
             background: '#0c0e1a',
             borderRadius: isMobile ? '16px 16px 0 0' : 16,
             border: '1px solid rgba(255,255,255,0.08)',
@@ -5194,11 +6862,11 @@ function DashboardInner() {
             </div>
           ) : !aiKey ? (
             /* ── No API key ── */
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 28, textAlign: 'center' }}>
-              <div style={{ fontSize: 36 }}>🤖</div>
-              <div style={{ fontSize: 14, color: '#94a3b8', fontWeight: 600 }}>No AI provider connected</div>
-              <div style={{ fontSize: 11, color: '#475569', maxWidth: 240, lineHeight: 1.7 }}>Connect an API key in Settings to get personalised financial insights.</div>
-              <button onClick={() => { setTab('settings'); setChatOpen(false); }} style={{ marginTop: 4, padding: '9px 20px', borderRadius: 10, background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)', color: '#818cf8', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Go to Settings</button>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 0, padding: 28, textAlign: 'center' }}>
+              <div style={{ fontSize: 32, marginBottom: 12, color: '#5a6280', opacity: 0.6 }}>🤖</div>
+              <div style={{ fontSize: 15, fontWeight: 600, color: '#eef0f6', marginBottom: 4, fontFamily: "'DM Sans',sans-serif" }}>AI insights not configured</div>
+              <div style={{ fontSize: 13, color: '#8b95b8', maxWidth: 240, lineHeight: 1.6, marginBottom: 16, fontFamily: "'DM Sans',sans-serif" }}>Add your API key in Settings to chat with your financial data</div>
+              <button onClick={() => { setTab('settings'); setChatOpen(false); }} style={{ padding: '8px 20px', borderRadius: 8, background: 'transparent', border: '1px solid rgba(99,102,241,0.5)', color: '#818cf8', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Set up AI →</button>
             </div>
           ) : (<>
             {/* Quick action pills */}
