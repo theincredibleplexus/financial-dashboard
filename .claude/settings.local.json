@@ -15,7 +15,9 @@
       "Bash(npm audit:*)",
       "Bash(npx npm-check-updates:*)",
       "Bash(npx vite:*)",
-      "Bash(grep -n \"tab === ''overview''\" /c/Users/r.airey/Desktop/financial-dashboard/src/dashboard.jsx)"
+      "Bash(grep -n \"tab === ''overview''\" /c/Users/r.airey/Desktop/financial-dashboard/src/dashboard.jsx)",
+      "Bash(xargs wc:*)",
+      "Bash(node -e \"const p=JSON.parse\\(require\\(''fs''\\).readFileSync\\(''package.json'',''utf8''\\)\\); console.log\\(''DEPS:'', Object.keys\\(p.dependencies\\).join\\('', ''\\)\\); console.log\\(''DEVDEPS:'', Object.keys\\(p.devDependencies\\).join\\('', ''\\)\\)\")"
     ]
   }
 }

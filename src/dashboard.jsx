@@ -510,8 +510,8 @@ export const DEMO_DATA = {
 const fmt=v=>`$${Math.abs(v).toLocaleString()}`;
 const fmtK=v=>{const a=Math.abs(v);return(a>=1000?`${v<0?"-":""}$${(a/1000).toFixed(a>=10000?0:1)}k`:`$${v}`);};
 const Tip=({active,payload,label})=>{if(!active||!payload)return null;return(<div style={{background:"#111127",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,padding:"10px 14px"}}><div style={{color:"#94a3b8",marginBottom:5,fontWeight:600,fontSize:12,textTransform:"uppercase"}}>{label}</div>{payload.filter(p=>p.value!==0&&p.value!==null).map((p,i)=>(<div key={i} style={{color:p.color||"#e2e8f0",display:"flex",justifyContent:"space-between",gap:20,lineHeight:1.7,fontSize:13}}><span>{p.name}</span><span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>{typeof p.value==='number'&&Math.abs(p.value)>=1000?`$${Math.abs(p.value).toLocaleString()}`:fmt(p.value)}</span></div>))}</div>);};
-const St=({label,value,sub,accent="#60a5fa",small})=>(<div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:small?"12px 16px":"16px 24px",flex:1,minWidth:small?85:115,boxShadow:"0 2px 12px rgba(0,0,0,0.3)"}}><div style={{color:"#5a6280",fontSize:11,textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:600,marginBottom:4,fontFamily:"'DM Sans',sans-serif"}}>{label}</div><div style={{color:accent,fontSize:small?15:24,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",lineHeight:1.1,fontVariantNumeric:"tabular-nums"}}>{value}</div>{sub&&<div style={{color:"#5a6280",fontSize:11,marginTop:3,fontFamily:"'DM Sans',sans-serif"}}>{sub}</div>}</div>);
-const Sec=({children,icon})=>(<div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,marginTop:24}}><span style={{fontSize:15}}>{icon}</span><h2 style={{margin:0,fontSize:12,fontWeight:700,color:"#5a6280",textTransform:"uppercase",letterSpacing:"0.1em",fontFamily:"'DM Sans',sans-serif"}}>{children}</h2><div style={{flex:1,height:1,background:"linear-gradient(90deg,rgba(255,255,255,0.07),transparent)"}}/></div>);
+const St=({label,value,sub,accent="#60a5fa",small})=>(<div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:small?"12px 16px":"16px 24px",flex:1,minWidth:small?85:115,boxShadow:"0 2px 12px rgba(0,0,0,0.3)"}}><div style={{color:"#6b7290",fontSize:11,textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:600,marginBottom:4,fontFamily:"'DM Sans',sans-serif"}}>{label}</div><div style={{color:accent,fontSize:small?15:24,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",lineHeight:1.1,fontVariantNumeric:"tabular-nums"}}>{value}</div>{sub&&<div style={{color:"#6b7290",fontSize:11,marginTop:3,fontFamily:"'DM Sans',sans-serif"}}>{sub}</div>}</div>);
+const Sec=({children,icon})=>(<div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,marginTop:24}}><span style={{fontSize:15}}>{icon}</span><h2 style={{margin:0,fontSize:12,fontWeight:700,color:"#6b7290",textTransform:"uppercase",letterSpacing:"0.1em",fontFamily:"'DM Sans',sans-serif"}}>{children}</h2><div style={{flex:1,height:1,background:"linear-gradient(90deg,rgba(255,255,255,0.07),transparent)"}}/></div>);
 const Ch=({children,height})=>(<div style={{background:"rgba(255,255,255,0.015)",borderRadius:14,border:"1px solid rgba(255,255,255,0.045)",padding:"12px 6px 6px"}}><ResponsiveContainer width="100%" height={height||200}>{children}</ResponsiveContainer></div>);
 const Lg=({items})=>(<div style={{display:"flex",justifyContent:"center",gap:11,padding:"5px 0",fontSize:11,flexWrap:"wrap"}}>{items.map(([l,c])=>(<div key={l} style={{display:"flex",alignItems:"center",gap:3,color:"#94a3b8"}}><div style={{width:5,height:5,borderRadius:2,background:c}}/>{l}</div>))}</div>);
 const Note=({color,children})=>(<div style={{marginTop:7,padding:9,borderRadius:8,background:`${color}08`,border:`1px solid ${color}15`,fontSize:12,color:"#94a3b8",lineHeight:1.5}}>{children}</div>);
@@ -983,7 +983,7 @@ export function CommaSpark({ data, collapsed, todaySpent = 0, todayNet = 0, days
             <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 14, fontWeight: 700, color }}>
               {todayNet >= 0 ? '+' : '-'}${Math.abs(todayNet).toLocaleString()}
             </span>
-            <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, color: '#5a6280' }}>this month</span>
+            <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, color: '#6b7290' }}>this month</span>
           </div>
         </>
       ) : (
@@ -992,7 +992,7 @@ export function CommaSpark({ data, collapsed, todaySpent = 0, todayNet = 0, days
             <line x1={0} y1={H/2} x2={chartW} y2={H/2} stroke="#5a6280" strokeWidth={1} strokeDasharray="3,3" />
             <text x={chartW + 2} y={H/2 + 8} fontFamily="'Playfair Display',Georgia,serif" fontSize={18} fill="#5a6280">,</text>
           </svg>
-          <div style={{ marginTop: 4, fontSize: 10, color: '#5a6280', fontFamily: "'DM Sans',sans-serif" }}>
+          <div style={{ marginTop: 4, fontSize: 10, color: '#6b7290', fontFamily: "'DM Sans',sans-serif" }}>
             Upload data to see your Spark
           </div>
         </>
@@ -1781,7 +1781,7 @@ function OnboardingModal({ onExploreDemo, onUploadCSV, onSignIn, onSignUp, authL
               Sign in
             </button>
           </div>
-          <p style={{ margin:'20px 0 0', fontSize:11, color:'#5a6280', textAlign:'center', lineHeight:1.5 }}>
+          <p style={{ margin:'20px 0 0', fontSize:11, color:'#6b7290', textAlign:'center', lineHeight:1.5 }}>
             Works with CBA, NAB, ANZ, Westpac, Up Bank, Macquarie, and more
           </p>
         </>)}
@@ -1792,8 +1792,8 @@ function OnboardingModal({ onExploreDemo, onUploadCSV, onSignIn, onSignUp, authL
           {logoMark}
           <h2 style={{ margin:'0 0 20px', fontSize:22, fontWeight:700, color:'#f1f5f9', alignSelf:'flex-start' }}>Sign in</h2>
           <div style={{ width:'100%' }}>
-            <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" style={inputStyle} autoComplete="email" />
-            <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Password" style={inputStyle} autoComplete="current-password" />
+            <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" aria-label="Email" style={inputStyle} autoComplete="email" />
+            <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Password" aria-label="Password" style={inputStyle} autoComplete="current-password" />
             {authError && <div style={{ marginBottom:10, fontSize:12, color:'#f87171' }}>{authError}</div>}
             <button onClick={() => onSignIn(email, password)} disabled={!email || !password || authLoading} style={btnPrimary(!email || !password || authLoading)}>
               {authLoading ? 'Signing in…' : 'Sign in'}
@@ -1827,9 +1827,9 @@ function OnboardingModal({ onExploreDemo, onUploadCSV, onSignIn, onSignUp, authL
             <div style={{ marginBottom:14, padding:'10px 14px', borderRadius:10, background:'rgba(251,191,36,0.06)', border:'1px solid rgba(251,191,36,0.2)', fontSize:12, color:'#fbbf24', lineHeight:1.7 }}>
               Your password encrypts your data. If you forget it, your data cannot be recovered.
             </div>
-            <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" style={inputStyle} autoComplete="email" />
+            <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" aria-label="Email" style={inputStyle} autoComplete="email" />
             <div style={{ position:'relative', marginBottom:10 }}>
-              <input type={showPw?'text':'password'} value={password} onChange={e=>setPassword(e.target.value)} placeholder="Password" style={{...inputStyle, marginBottom:0, paddingRight:38}} autoComplete="new-password" />
+              <input type={showPw?'text':'password'} value={password} onChange={e=>setPassword(e.target.value)} placeholder="Password" aria-label="Password" style={{...inputStyle, marginBottom:0, paddingRight:38}} autoComplete="new-password" />
               <button onClick={()=>setShowPw(v=>!v)} style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', color:'#475569', cursor:'pointer', fontSize:13, padding:0, lineHeight:1 }}>{showPw?'🙈':'👁'}</button>
             </div>
             {password && (
@@ -1840,7 +1840,7 @@ function OnboardingModal({ onExploreDemo, onUploadCSV, onSignIn, onSignUp, authL
                 <div style={{ fontSize:11, color:pwStrength.color }}>{pwStrength.label}</div>
               </div>
             )}
-            <input type="password" value={confirmPw} onChange={e=>setConfirmPw(e.target.value)} placeholder="Confirm password" style={{...inputStyle, borderColor: confirmPw && !pwMatch ? 'rgba(248,113,113,0.4)' : 'rgba(255,255,255,0.09)'}} autoComplete="new-password" />
+            <input type="password" value={confirmPw} onChange={e=>setConfirmPw(e.target.value)} placeholder="Confirm password" aria-label="Confirm password" style={{...inputStyle, borderColor: confirmPw && !pwMatch ? 'rgba(248,113,113,0.4)' : 'rgba(255,255,255,0.09)'}} autoComplete="new-password" />
             {confirmPw && !pwMatch && <div style={{ fontSize:11, color:'#f87171', marginTop:-8, marginBottom:10 }}>Passwords don't match</div>}
             <label style={{ display:'flex', alignItems:'flex-start', gap:8, marginBottom:14, cursor:'pointer' }}>
               <input type="checkbox" checked={understood} onChange={e=>setUnderstood(e.target.checked)} style={{ marginTop:2, flexShrink:0 }} />
@@ -1971,7 +1971,7 @@ function MobileOverviewStory({
     >
       {/* Pull indicator */}
       {(pullY > 12 || refreshing) && (
-        <div style={{ textAlign: 'center', fontSize: 12, color: '#5a6280', height: refreshing ? 32 : Math.min(pullY * 0.5, 32), display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', gap: 6 }}>
+        <div style={{ textAlign: 'center', fontSize: 12, color: '#6b7290', height: refreshing ? 32 : Math.min(pullY * 0.5, 32), display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', gap: 6 }}>
           <span style={{ display: 'inline-block', animation: refreshing ? 'mobPullSpin 0.4s linear infinite' : 'none', opacity: pullY >= 60 || refreshing ? 1 : 0.5 }}>↻</span>
           {pullY >= 60 ? 'Release to refresh' : 'Pull to refresh'}
         </div>
@@ -1986,7 +1986,7 @@ function MobileOverviewStory({
             {Math.abs(ovCurNet).toLocaleString()}
           </div>
         </div>
-        <div style={{ fontSize: 13, color: '#5a6280', fontFamily: "'DM Sans', sans-serif", marginTop: 6 }}>this month</div>
+        <div style={{ fontSize: 13, color: '#6b7290', fontFamily: "'DM Sans', sans-serif", marginTop: 6 }}>this month</div>
         <div style={{ margin: '12px -16px 0', height: 40, paddingLeft: 16, paddingRight: 16 }}>
           <CommaSpark
             data={sparkData}
@@ -2011,7 +2011,7 @@ function MobileOverviewStory({
           { label: 'Savings rate', value: `${savingsRate > 0 ? '+' : ''}${savingsRate}%`, bg: savingsRate >= 0 ? 'rgba(99,102,241,0.08)' : 'rgba(248,113,113,0.08)', border: savingsRate >= 0 ? 'rgba(99,102,241,0.18)' : 'rgba(248,113,113,0.18)', color: savingsRate >= 0 ? '#818cf8' : '#f87171' },
         ].map((card, i) => (
           <div key={i} style={{ flexShrink: 0, width: 'calc(80vw - 32px)', maxWidth: 260, scrollSnapAlign: 'start', background: card.bg, border: `1px solid ${card.border}`, borderRadius: 12, padding: 16, minHeight: 80, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-            <div style={{ fontSize: 11, color: '#5a6280', fontWeight: 600, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{card.label}</div>
+            <div style={{ fontSize: 11, color: '#6b7290', fontWeight: 600, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{card.label}</div>
             <div style={{ fontSize: 28, fontWeight: 700, color: card.color, fontFamily: "'JetBrains Mono', monospace", lineHeight: 1 }}>{card.value}</div>
           </div>
         ))}
@@ -2077,7 +2077,7 @@ function MobileOverviewStory({
                 {p.icon && <span style={{ fontSize: 20, flexShrink: 0 }}>{p.icon}</span>}
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0', marginBottom: 2 }}>{p.text}</div>
-                  <div style={{ fontSize: 11, color: '#5a6280' }}>{p.sub}</div>
+                  <div style={{ fontSize: 11, color: '#6b7290' }}>{p.sub}</div>
                 </div>
                 <span style={{ fontSize: 14, color: '#6366f1', flexShrink: 0 }}>→</span>
               </div>
@@ -2181,7 +2181,24 @@ function DashboardInner() {
   const [uploadedFiles, setUploadedFiles] = useState(() => {
     try {
       const stored = JSON.parse(localStorage.getItem('comma_uploaded_data') || '[]');
-      return stored.map(item => processUploadedFile(item.filename, item.rawCsvText));
+      return stored.map(item => {
+        // Migration: old format stored rawCsvText but no parsedData — re-parse once
+        if (item.rawCsvText && !item.parsedData) {
+          return processUploadedFile(item.filename, item.rawCsvText);
+        }
+        // New format: reconstruct from stored parsedData (no rawCsvText kept)
+        return {
+          id: item.id || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          filename: item.filename,
+          rawCsvText: '',
+          type: item.type,
+          bankLabel: item.bankLabel,
+          status: item.status,
+          rowCount: item.rowCount || 0,
+          dateRange: item.dateRange || null,
+          parsedData: item.parsedData || null,
+        };
+      });
     } catch { return []; }
   });
   const [isMobile,       setIsMobile]       = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
@@ -2233,6 +2250,16 @@ function DashboardInner() {
   const [isDataParsing, setIsDataParsing] = useState(false);  // skeleton screen during file parse
   const prevTierRef = useRef(null); // track previous tier for upgrade detection
 
+  // ─── TOAST SYSTEM ─────────────────────────────────────────────────────────
+  // Reusable notification toasts. type: 'success' | 'warning' | 'error'
+  const [appToasts, setAppToasts] = useState([]);
+  const showToast = (message, type = 'warning') => {
+    const id = Date.now() + Math.random();
+    setAppToasts(prev => [...prev.slice(-2), { id, message, type }]); // cap at 3 visible
+    setTimeout(() => setAppToasts(prev => prev.filter(t => t.id !== id)), 6000);
+  };
+  const QUOTA_MSG = 'Storage full — some data may not be saved. Clear old data in Settings or use cloud sync.';
+
   useEffect(() => {
     const h = () => {
       const w = window.innerWidth;
@@ -2246,7 +2273,8 @@ function DashboardInner() {
 
   // Persist sidebar collapsed pref
   useEffect(() => {
-    try { localStorage.setItem('comma_sidebar_collapsed', JSON.stringify(sidebarCollapsed)); } catch {}
+    try { localStorage.setItem('comma_sidebar_collapsed', JSON.stringify(sidebarCollapsed)); }
+    catch (e) { if (e instanceof DOMException && e.name === 'QuotaExceededError') showToast(QUOTA_MSG, 'warning'); } // eslint-disable-line react-hooks/exhaustive-deps
   }, [sidebarCollapsed]);
 
   // Keep active group expanded when tab changes
@@ -2283,12 +2311,17 @@ function DashboardInner() {
     return () => window.removeEventListener('keydown', handler);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Persist raw CSV texts to localStorage whenever uploadedFiles changes
+  // Persist parsed transaction data to localStorage whenever uploadedFiles changes.
+  // rawCsvText is intentionally excluded — only parsedData is stored.
+  // Manual/error entries are excluded as they cannot be restored without raw text.
   useEffect(() => {
-    const toStore = uploadedFiles.map(({ id, filename, rawCsvText, type, bankLabel, status, rowCount }) =>
-      ({ id, filename, rawCsvText, type, bankLabel, status, rowCount })
-    );
-    localStorage.setItem('comma_uploaded_data', JSON.stringify(toStore));
+    const toStore = uploadedFiles
+      .filter(f => f.status === 'success' && f.parsedData)
+      .map(({ id, filename, type, bankLabel, status, rowCount, dateRange, parsedData }) =>
+        ({ id, filename, type, bankLabel, status, rowCount, dateRange, parsedData })
+      );
+    try { localStorage.setItem('comma_uploaded_data', JSON.stringify(toStore)); }
+    catch (e) { if (e instanceof DOMException && e.name === 'QuotaExceededError') showToast(QUOTA_MSG, 'warning'); } // eslint-disable-line react-hooks/exhaustive-deps
     queueSync('transactions', toStore);
   }, [uploadedFiles]);
 
@@ -2299,7 +2332,8 @@ function DashboardInner() {
   });
 
   useEffect(() => {
-    localStorage.setItem('comma_goals', JSON.stringify(goals));
+    try { localStorage.setItem('comma_goals', JSON.stringify(goals)); }
+    catch (e) { if (e instanceof DOMException && e.name === 'QuotaExceededError') showToast(QUOTA_MSG, 'warning'); } // eslint-disable-line react-hooks/exhaustive-deps
     queueSync('goals', goals);
   }, [goals]);
 
@@ -2320,7 +2354,8 @@ function DashboardInner() {
   });
   useEffect(() => {
     const sheet = { assets: bsAssets, liabilities: bsLiabilities };
-    localStorage.setItem('comma_balance_sheet', JSON.stringify(sheet));
+    try { localStorage.setItem('comma_balance_sheet', JSON.stringify(sheet)); }
+    catch (e) { if (e instanceof DOMException && e.name === 'QuotaExceededError') showToast(QUOTA_MSG, 'warning'); } // eslint-disable-line react-hooks/exhaustive-deps
     queueSync('balance_sheet', sheet);
   }, [bsAssets, bsLiabilities]);
   const [editingBsCell,    setEditingBsCell]    = useState(null); // { type:'asset'|'liability', id }
@@ -2336,7 +2371,8 @@ function DashboardInner() {
     catch { return []; }
   });
   useEffect(() => {
-    localStorage.setItem('comma_nw_snapshots', JSON.stringify(nwSnapshots));
+    try { localStorage.setItem('comma_nw_snapshots', JSON.stringify(nwSnapshots)); }
+    catch (e) { if (e instanceof DOMException && e.name === 'QuotaExceededError') showToast(QUOTA_MSG, 'warning'); } // eslint-disable-line react-hooks/exhaustive-deps
     queueSync('snapshots', nwSnapshots);
   }, [nwSnapshots]);
   const [nwSnapshotMsg,        setNwSnapshotMsg]        = useState(null); // confirmation string
@@ -2352,7 +2388,8 @@ function DashboardInner() {
   });
 
   useEffect(() => {
-    localStorage.setItem('comma_user_rules', JSON.stringify(userRules));
+    try { localStorage.setItem('comma_user_rules', JSON.stringify(userRules)); }
+    catch (e) { if (e instanceof DOMException && e.name === 'QuotaExceededError') showToast(QUOTA_MSG, 'warning'); } // eslint-disable-line react-hooks/exhaustive-deps
     queueSync('user_rules', userRules);
   }, [userRules]);
 
@@ -2374,7 +2411,8 @@ function DashboardInner() {
   });
 
   useEffect(() => {
-    localStorage.setItem('comma_preferences', JSON.stringify(preferences));
+    try { localStorage.setItem('comma_preferences', JSON.stringify(preferences)); }
+    catch (e) { if (e instanceof DOMException && e.name === 'QuotaExceededError') showToast(QUOTA_MSG, 'warning'); } // eslint-disable-line react-hooks/exhaustive-deps
     queueSync('preferences', preferences);
   }, [preferences]);
 
@@ -2403,7 +2441,7 @@ function DashboardInner() {
           setUpgradeToast(true);
           setTimeout(() => setUpgradeToast(false), 4500);
         }
-      } catch {}
+      } catch (e) { if (e instanceof DOMException && e.name === 'QuotaExceededError') showToast(QUOTA_MSG, 'warning'); } // eslint-disable-line react-hooks/exhaustive-deps
     }
     prevTierRef.current = userTier;
   }, [userTier]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -2480,7 +2518,8 @@ function DashboardInner() {
   function saveAiConfig(patch) {
     setAiConfig(prev => {
       const next = { ...prev, ...patch };
-      localStorage.setItem('comma_ai_config', JSON.stringify(next));
+      try { localStorage.setItem('comma_ai_config', JSON.stringify(next)); }
+      catch (e) { if (e instanceof DOMException && e.name === 'QuotaExceededError') setTimeout(() => showToast(QUOTA_MSG, 'warning'), 0); } // eslint-disable-line react-hooks/exhaustive-deps
       return next;
     });
     setAiTestStatus(null);
@@ -2524,7 +2563,7 @@ function DashboardInner() {
     { pattern: /\b(variable spending|discretionary spending)\b/gi, tab: 'variable', label: null },
     { pattern: /\b(health|medical|pharmacy|GP|physio|dental)\b/gi, tab: 'health', label: null },
     { pattern: /\b(subscription(?:s)?|streaming|netflix|spotify)\b/gi, tab: 'subs', label: null },
-    { pattern: /\b(PayPal)\b/gi, tab: 'paypal', label: null },
+    { pattern: /\b(PayPal)\b/gi, tab: 'categories', label: null },
     { pattern: /\b(spending pattern(?:s)?|category breakdown|categories)\b/gi, tab: 'insights', label: null },
     { pattern: /\b(trend(?:s)?|month[- ]by[- ]month|monthly trend)\b/gi, tab: 'trend', label: null },
   ];
@@ -2722,6 +2761,7 @@ function DashboardInner() {
   const [editingGoalId,  setEditingGoalId]  = useState(null);
   const [deletingGoalId, setDeletingGoalId] = useState(null);
   const [goalDraft,      setGoalDraft]      = useState({ emoji:'🎯', name:'', targetAmount:'', targetDate:'', savedSoFar:'0' });
+  const [goalError,      setGoalError]      = useState('');
 
   const handleUploadedFiles = (fileList) => {
     // Show skeleton only if parsing takes longer than 200ms (avoids flash on fast files)
@@ -2748,7 +2788,7 @@ function DashboardInner() {
             record.parsedData &&
             prev.filter(f => (f.type === 'bank' || f.type === 'upbank') && f.status === 'success').length === 0;
           if (isFirstBank) {
-            localStorage.setItem('comma_reveal_shown', 'true');
+            try { localStorage.setItem('comma_reveal_shown', 'true'); } catch {}
             setRevealData(computeRevealData(record.parsedData));
             setShowReveal(true);
           }
@@ -2768,7 +2808,7 @@ function DashboardInner() {
         data &&
         prev.filter(f => (f.type === 'bank' || f.type === 'upbank') && f.status === 'success').length === 0;
       if (isFirstBank) {
-        localStorage.setItem('comma_reveal_shown', 'true');
+        try { localStorage.setItem('comma_reveal_shown', 'true'); } catch {}
         setRevealData(computeRevealData(data));
         setShowReveal(true);
       }
@@ -2849,13 +2889,13 @@ function DashboardInner() {
   }, [tab]);
 
   const handleLaunchDemo = () => {
-    localStorage.setItem('comma_onboarded', 'true');
+    try { localStorage.setItem('comma_onboarded', 'true'); } catch {}
     setShowOnboarding(false);
     setTab('overview');
   };
 
   const handleOnboardingUploadCSV = () => {
-    localStorage.setItem('comma_onboarded', 'true');
+    try { localStorage.setItem('comma_onboarded', 'true'); } catch {}
     setShowOnboarding(false);
     setTab('settings');
   };
@@ -2863,7 +2903,7 @@ function DashboardInner() {
   // Auth success closes the onboarding modal automatically
   useEffect(() => {
     if (authUser && showOnboarding) {
-      localStorage.setItem('comma_onboarded', 'true');
+      try { localStorage.setItem('comma_onboarded', 'true'); } catch {}
       setShowOnboarding(false);
     }
   }, [authUser, showOnboarding]);
@@ -3078,7 +3118,23 @@ function DashboardInner() {
         throw new Error('DECRYPTION_FAILED');
       }
       if (dataType === 'transactions') {
-        setUploadedFiles(decrypted.map(item => processUploadedFile(item.filename, item.rawCsvText)));
+        setUploadedFiles(decrypted.map(item => {
+          // Migration: old synced format had rawCsvText — re-parse once
+          if (item.rawCsvText && !item.parsedData) {
+            return processUploadedFile(item.filename, item.rawCsvText);
+          }
+          return {
+            id: item.id || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            filename: item.filename,
+            rawCsvText: '',
+            type: item.type,
+            bankLabel: item.bankLabel,
+            status: item.status,
+            rowCount: item.rowCount || 0,
+            dateRange: item.dateRange || null,
+            parsedData: item.parsedData || null,
+          };
+        }));
       } else if (dataType === 'goals') {
         setGoals(decrypted);
       } else if (dataType === 'snapshots') {
@@ -3125,8 +3181,20 @@ function DashboardInner() {
     }
   };
 
+  const clearUserData = () => {
+    // Remove all comma_* localStorage keys except UX preferences that aren't user data
+    const KEEP = new Set(['comma_onboarded', 'comma_sidebar_collapsed']);
+    const toRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('comma_') && !KEEP.has(key)) toRemove.push(key);
+    }
+    toRemove.forEach(k => localStorage.removeItem(k));
+  };
+
   const handleAuthSignOut = async () => {
     await supaSignOut();
+    clearUserData();
     // Wipe all in-memory key material
     _encKey  = null;
     _encSalt = null;
@@ -3518,8 +3586,17 @@ function DashboardInner() {
   }, [goals, plan.surplus, hasActualData, actualAvgSavings]);
   const openGoalEdit     = (g) => { setEditingGoalId(g.id); setGoalDraft({emoji:g.emoji,name:g.name,targetAmount:String(g.targetAmount),targetDate:g.targetDate||'',savedSoFar:String(g.savedSoFar||0)}); setShowGoalForm(true); };
   const applyGoalTpl     = (t) => { setEditingGoalId(null); setGoalDraft({emoji:t.emoji,name:t.name,targetAmount:String(t.targetAmount),targetDate:goalAddMonths(t.monthsOut),savedSoFar:'0'}); setShowGoalForm(true); };
-  const saveGoalDraft    = () => { const g={id:editingGoalId||('g'+Date.now()),emoji:goalDraft.emoji||'🎯',name:sanitiseUserInput(goalDraft.name,100)||'Goal',targetAmount:parseFloat(goalDraft.targetAmount)||0,targetDate:goalDraft.targetDate,savedSoFar:parseFloat(goalDraft.savedSoFar)||0}; if(editingGoalId)updateGoal(editingGoalId,g);else addGoal(g); setShowGoalForm(false);setEditingGoalId(null); };
-  const cancelGoalForm   = () => { setShowGoalForm(false); setEditingGoalId(null); };
+  const saveGoalDraft    = () => {
+    const target = parseFloat(goalDraft.targetAmount);
+    const saved  = parseFloat(goalDraft.savedSoFar) || 0;
+    if (!target || target <= 0) { setGoalError('Target must be greater than $0'); return; }
+    if (saved < 0) { setGoalError('Amount saved cannot be negative'); return; }
+    setGoalError('');
+    const g={id:editingGoalId||('g'+Date.now()),emoji:goalDraft.emoji||'🎯',name:sanitiseUserInput(goalDraft.name,100)||'Goal',targetAmount:target,targetDate:goalDraft.targetDate,savedSoFar:saved};
+    if(editingGoalId)updateGoal(editingGoalId,g);else addGoal(g);
+    setShowGoalForm(false);setEditingGoalId(null);
+  };
+  const cancelGoalForm   = () => { setShowGoalForm(false); setEditingGoalId(null); setGoalError(''); };
 
   // ── Tier access helper ──────────────────────────────────────────────────────
   const canAccess = (feature) => {
@@ -3660,7 +3737,6 @@ function DashboardInner() {
       } catch {}
     }} />}
     <div style={{ fontFamily: "'DM Sans','Instrument Sans',-apple-system,sans-serif", background: "#07080f", color: "#eef0f6", minHeight: "100vh", display: "flex", ...(showOnboarding ? { filter: 'blur(8px)', pointerEvents: 'none', userSelect: 'none' } : {}) }}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet" />
       <style>{`
         @keyframes commaPulse{0%,100%{opacity:0.5}50%{opacity:1}}
         @keyframes mobBobChevron{0%,100%{transform:translateY(0)}50%{transform:translateY(4px)}}
@@ -3751,6 +3827,21 @@ function DashboardInner() {
         </div>
       )}
 
+      {/* App notification toasts — storage warnings, errors, etc. */}
+      {appToasts.length > 0 && (
+        <div style={{ position: 'fixed', top: upgradeToast ? 130 : 72, left: '50%', transform: 'translateX(-50%)', zIndex: 10002, display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 400, width: 'calc(100vw - 48px)' }}>
+          {appToasts.map(toast => {
+            const borderColor = toast.type === 'success' ? '#22c98a' : toast.type === 'error' ? '#f5455c' : '#f5a623';
+            return (
+              <div key={toast.id} style={{ background: '#0f1117', borderRadius: 10, border: '1px solid rgba(255,255,255,0.08)', borderLeft: `3px solid ${borderColor}`, padding: '12px 16px', display: 'flex', alignItems: 'flex-start', gap: 10, boxShadow: '0 4px 24px rgba(0,0,0,0.4)', animation: 'toastSlideIn 250ms ease-out both' }}>
+                <div style={{ fontSize: 13, color: '#e2e8f0', flex: 1, lineHeight: 1.55, fontFamily: "'DM Sans','Instrument Sans',sans-serif" }}>{toast.message}</div>
+                <button onClick={() => setAppToasts(prev => prev.filter(t => t.id !== toast.id))} style={{ background: 'none', border: 'none', color: '#475569', fontSize: 16, cursor: 'pointer', flexShrink: 0, padding: '0 4px', lineHeight: 1 }}>×</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Purchase success toast */}
       {purchaseToast && (
         <div style={{ position:'fixed', bottom:24, left:'50%', transform:'translateX(-50%)', zIndex:10000, background: purchaseToast.tier === 'lifetime' ? 'linear-gradient(135deg,#064e3b,#065f46)' : 'linear-gradient(135deg,#1e1b4b,#312e81)', border:`1px solid ${purchaseToast.tier === 'lifetime' ? 'rgba(52,211,153,0.4)' : 'rgba(129,140,248,0.4)'}`, borderRadius:16, padding:'16px 24px', display:'flex', alignItems:'center', gap:14, boxShadow:'0 8px 32px rgba(0,0,0,0.5)', maxWidth:340, width:'calc(100vw - 48px)' }}>
@@ -3789,7 +3880,7 @@ function DashboardInner() {
           : 'transparent';
         const pulseTextColor = period === 'night' ? '#8b95b8' : undefined;
         return (
-          <div id="sidebar-desktop" style={{ width: sidebarW, flexShrink: 0, background: '#0c0e1a', borderRight: '1px solid rgba(255,255,255,0.06)', height: '100vh', position: 'fixed', left: 0, top: 0, zIndex: 50, display: 'flex', flexDirection: 'column', transition: 'width 200ms ease', overflowX: 'hidden', overflowY: 'hidden', ...(upgradeToast ? { animation: 'upgradePulse 600ms ease-out 3' } : {}) }}>
+          <nav id="sidebar-desktop" role="navigation" aria-label="Main navigation" style={{ width: sidebarW, flexShrink: 0, background: '#0c0e1a', borderRight: '1px solid rgba(255,255,255,0.06)', height: '100vh', position: 'fixed', left: 0, top: 0, zIndex: 50, display: 'flex', flexDirection: 'column', transition: 'width 200ms ease', overflowX: 'hidden', overflowY: 'hidden', ...(upgradeToast ? { animation: 'upgradePulse 600ms ease-out 3' } : {}) }}>
 
             {/* ── Header: logo + greeting (ambient tint overlay) ── */}
             <div style={{ padding: effectiveCollapsed ? '18px 0 14px' : '18px 16px 14px', borderBottom: '1px solid rgba(255,255,255,0.04)', flexShrink: 0, background: headerTint, transition: 'background 1s ease' }}>
@@ -3828,6 +3919,7 @@ function DashboardInner() {
                     {/* Group header */}
                     <button
                       title={effectiveCollapsed ? group.label : undefined}
+                      aria-label={group.label}
                       onMouseEnter={() => effectiveCollapsed && setSidebarHoverGroup(group.label)}
                       onMouseLeave={() => setSidebarHoverGroup(null)}
                       onClick={() => {
@@ -3850,7 +3942,7 @@ function DashboardInner() {
                           <span style={{ fontSize: 10, fontWeight: 700, color: isActiveGroup ? '#94a3b8' : '#475569', textTransform: 'uppercase', letterSpacing: '0.08em', flex: 1, textAlign: 'left' }}>{group.label}</span>
                           {/* Nav group badges */}
                           {group.label === 'Spending' && currentMonthSpend > 0 && (
-                            <span style={{ fontSize: 10, color: '#5a6280', fontFamily: "'JetBrains Mono',monospace", marginRight: 4 }}>${currentMonthSpend.toLocaleString()}</span>
+                            <span style={{ fontSize: 10, color: '#6b7290', fontFamily: "'JetBrains Mono',monospace", marginRight: 4 }}>${currentMonthSpend.toLocaleString()}</span>
                           )}
                           {group.label === 'Insights' && uncatCount > 0 && (
                             <span style={{ fontSize: 10, color: '#f59e0b', fontWeight: 700, background: 'rgba(245,158,11,0.12)', borderRadius: 4, padding: '1px 5px', marginRight: 4 }}>{uncatCount}</span>
@@ -3938,7 +4030,7 @@ function DashboardInner() {
                   <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="#5a6280" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                     <line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.56 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/>
                   </svg>
-                  {!effectiveCollapsed && <span style={{ fontSize: 10, color: '#5a6280' }}>Offline</span>}
+                  {!effectiveCollapsed && <span style={{ fontSize: 10, color: '#6b7290' }}>Offline</span>}
                 </div>
               )}
               {showBackOnline && (
@@ -3952,7 +4044,7 @@ function DashboardInner() {
                   {!authUser && <span style={{ color: '#334155' }}>Local only</span>}
                   {authUser && syncStatus === 'syncing' && isOnline && <span className="sync-syncing" style={{ color: '#f59e0b' }}>Syncing…</span>}
                   {authUser && syncStatus === 'synced' && isOnline && <span style={{ color: '#34d399', cursor: 'pointer' }} title={lastSynced ? `Last synced ${new Date(lastSynced).toLocaleTimeString()}` : 'Synced'} onClick={handleSyncNow}>✓ Synced</span>}
-                  {authUser && (!isOnline || syncStatus === 'offline') && <span style={{ color: '#5a6280' }}>Sync paused</span>}
+                  {authUser && (!isOnline || syncStatus === 'offline') && <span style={{ color: '#6b7290' }}>Sync paused</span>}
                   {historyLimitActive && !effectiveCollapsed && (
                     <button onClick={() => setUpgradeOpen(true)} style={{ marginLeft: 'auto', background:'none', border:'none', color:'#fbbf24', fontSize:9, fontWeight:700, cursor:'pointer', padding:0 }}>Month only ↑</button>
                   )}
@@ -3990,12 +4082,13 @@ function DashboardInner() {
               <button
                 onClick={() => setSidebarCollapsed(c => !c)}
                 title={effectiveCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                aria-label={effectiveCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                 style={{ position: 'absolute', top: 20, right: -12, width: 24, height: 24, borderRadius: '50%', background: '#0c0e1a', border: '1px solid rgba(255,255,255,0.1)', color: '#475569', fontSize: 11, cursor: 'col-resize', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1, flexShrink: 0 }}
               >
                 {effectiveCollapsed ? '›' : '‹'}
               </button>
             )}
-          </div>
+          </nav>
         );
       })()}
 
@@ -4072,7 +4165,7 @@ function DashboardInner() {
               )}
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontFamily: "'DM Sans','Instrument Sans',sans-serif", fontSize: 15, fontWeight: 600, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tabLabel}</div>
-                {headerSubtitle && <div style={{ fontSize: 12, color: '#5a6280', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 1 }}>{headerSubtitle}</div>}
+                {headerSubtitle && <div style={{ fontSize: 12, color: '#6b7290', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 1 }}>{headerSubtitle}</div>}
               </div>
             </div>
             {/* Right: AI chat button */}
@@ -4181,6 +4274,7 @@ function DashboardInner() {
               return (
                 <button
                   key={group.label}
+                  aria-label={group.label}
                   onClick={() => {
                     setMobTapGroup(group.label);
                     setTimeout(() => setMobTapGroup(null), 150);
@@ -4214,7 +4308,7 @@ function DashboardInner() {
       )}
 
       {/* ═══ MAIN CONTENT ═══ */}
-      <div className="main-content" style={{ flex: 1, padding: isMobile ? `60px 16px 80px` : sidebarHidden ? `72px 16px 48px` : "72px 24px 48px", minWidth: 0, marginLeft: sidebarHidden ? 0 : ((sidebarCollapsed || autoCollapsed) ? 64 : 240), transition: 'margin-left 200ms ease' }}>
+      <main role="main" className="main-content" style={{ flex: 1, padding: isMobile ? `60px 16px 80px` : sidebarHidden ? `72px 16px 48px` : "72px 24px 48px", minWidth: 0, marginLeft: sidebarHidden ? 0 : ((sidebarCollapsed || autoCollapsed) ? 64 : 240), transition: 'margin-left 200ms ease' }}>
 
       {/* Print-only header/footer */}
       <div className="print-header">
@@ -4233,7 +4327,7 @@ function DashboardInner() {
             style={{ background: "none", border: "1px solid rgba(245,166,35,0.3)", borderRadius: 6, color: "#f5a623", fontSize: 11, fontWeight: 600, padding: "4px 10px", cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>
             Go to Search →
           </button>
-          <button onClick={() => { setShowCatHint(false); localStorage.setItem('comma_categorise_hint_dismissed', 'true'); }}
+          <button onClick={() => { setShowCatHint(false); try { localStorage.setItem('comma_categorise_hint_dismissed', 'true'); } catch {} }}
             style={{ background: "none", border: "none", color: "#f5a623", fontSize: 16, cursor: "pointer", padding: "0 2px", lineHeight: 1, opacity: 0.6, flexShrink: 0 }}>
             ✕
           </button>
@@ -5092,7 +5186,7 @@ function DashboardInner() {
           {(() => {
             if (nwSnapshots.length === 0) return (
               <div style={{ marginBottom:16, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', textAlign:'center', padding:'40px 24px', borderRadius:12, background:'rgba(255,255,255,0.02)', border:'1px solid rgba(255,255,255,0.06)' }}>
-                <div style={{ fontSize:32, marginBottom:12, color:'#5a6280', opacity:0.6 }}>📈</div>
+                <div style={{ fontSize:32, marginBottom:12, color:'#6b7290', opacity:0.6 }}>📈</div>
                 <div style={{ fontSize:15, fontWeight:600, color:'#eef0f6', marginBottom:4, fontFamily:"'DM Sans',sans-serif" }}>No snapshots yet</div>
                 <div style={{ fontSize:13, color:'#8b95b8', marginBottom:16, fontFamily:"'DM Sans',sans-serif" }}>Record your assets and debts to track net worth over time</div>
                 <button onClick={()=>{ const btn = document.querySelector('[data-save-snapshot]'); if(btn) btn.click(); }} style={{ padding:'8px 20px', borderRadius:8, background:'transparent', border:'1px solid rgba(99,102,241,0.5)', color:'#818cf8', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>Save first snapshot →</button>
@@ -5392,7 +5486,7 @@ function DashboardInner() {
         {/* Category breakdown */}
         {catData.length === 0 ? (
           <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', textAlign:'center', padding:'40px 24px' }}>
-            <div style={{ fontSize:32, marginBottom:12, color:'#5a6280', opacity:0.6 }}>🔍</div>
+            <div style={{ fontSize:32, marginBottom:12, color:'#6b7290', opacity:0.6 }}>🔍</div>
             <div style={{ fontSize:15, fontWeight:600, color:'#eef0f6', marginBottom:4, fontFamily:"'DM Sans',sans-serif" }}>No transactions found</div>
             <div style={{ fontSize:13, color:'#8b95b8', fontFamily:"'DM Sans',sans-serif" }}>Try adjusting the period or payment method filter</div>
           </div>
@@ -5642,7 +5736,7 @@ function DashboardInner() {
         {/* Empty state */}
         {goals.length===0 && !showGoalForm && (
           <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', textAlign:'center', padding:'48px 24px' }}>
-            <div style={{ fontSize:32, marginBottom:12, color:'#5a6280', opacity:0.6 }}>🎯</div>
+            <div style={{ fontSize:32, marginBottom:12, color:'#6b7290', opacity:0.6 }}>🎯</div>
             <div style={{ fontSize:15, fontWeight:600, color:'#eef0f6', marginBottom:4, fontFamily:"'DM Sans',sans-serif" }}>No goals yet</div>
             <div style={{ fontSize:13, color:'#8b95b8', marginBottom:16, fontFamily:"'DM Sans',sans-serif" }}>Set a savings target and track your progress</div>
             <button onClick={()=>setShowGoalForm(true)} style={{ padding:'8px 20px', borderRadius:8, background:'transparent', border:'1px solid rgba(99,102,241,0.5)', color:'#818cf8', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit', marginBottom:24 }}>Create a goal →</button>
@@ -5659,7 +5753,7 @@ function DashboardInner() {
 
         {/* Goal cards */}
         {goals.map((g, gi)=>{
-          const pct = g.targetAmount>0 ? Math.min(100,Math.round((g.savedSoFar/g.targetAmount)*100)) : 0;
+          const pct = g.targetAmount>0 ? Math.min(100,Math.max(0,Math.round((g.savedSoFar/g.targetAmount)*100))) : 0;
           const proj = goalProjDate(g);
           const isDeleting = deletingGoalId===g.id;
           return (
@@ -5742,7 +5836,7 @@ function DashboardInner() {
             <div style={{ marginBottom:10 }}>
               <div style={{ fontSize:11, color:'#64748b', marginBottom:4 }}>Name</div>
               <input style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:8, padding:'7px 11px', color:'#e2e8f0', fontSize:13, fontFamily:'inherit', width:'100%', boxSizing:'border-box', outline:'none' }}
-                placeholder="e.g. House Deposit" value={goalDraft.name} onChange={e=>setGoalDraft(d=>({...d,name:e.target.value}))} />
+                placeholder="e.g. House Deposit" aria-label="Goal name" value={goalDraft.name} onChange={e=>setGoalDraft(d=>({...d,name:e.target.value}))} />
             </div>
             {/* Target + Saved */}
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:10 }}>
@@ -5769,6 +5863,8 @@ function DashboardInner() {
               <input style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:8, padding:'7px 11px', color:'#e2e8f0', fontSize:13, fontFamily:'inherit', width:'100%', boxSizing:'border-box', outline:'none', colorScheme:'dark' }}
                 type="date" value={goalDraft.targetDate} onChange={e=>setGoalDraft(d=>({...d,targetDate:e.target.value}))} />
             </div>
+            {/* Validation error */}
+            {goalError && <div style={{ fontSize:12, color:'#f5455c', marginBottom:8 }}>{goalError}</div>}
             {/* Buttons */}
             <div style={{ display:'flex', gap:8 }}>
               <button onClick={saveGoalDraft} style={{ flex:1, padding:'8px 0', borderRadius:9, background:'rgba(52,211,153,0.1)', border:'1px solid rgba(52,211,153,0.25)', color:'#34d399', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:'inherit' }}>Save Goal</button>
@@ -6034,7 +6130,7 @@ function DashboardInner() {
           const isFirst = !firstRecatDone;
           if (isFirst) {
             setFirstRecatDone(true);
-            localStorage.setItem('comma_first_recat_done', 'true');
+            try { localStorage.setItem('comma_first_recat_done', 'true'); } catch {}
           }
           setCatConfirm({ pattern: editPattern, cat, count, isFirst });
           setPendingRule(null);
@@ -6058,6 +6154,7 @@ function DashboardInner() {
 
           <input
             type="text" placeholder="Search transactions…" value={searchQuery}
+            aria-label="Search transactions"
             onChange={e => setSearchQuery(e.target.value)}
             onClick={e => e.stopPropagation()}
             style={{ width: "100%", boxSizing: "border-box", padding: "11px 14px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: "#e2e8f0", fontSize: 14, fontFamily: "inherit", outline: "none", marginBottom: 10 }}
@@ -6263,7 +6360,7 @@ function DashboardInner() {
         <div ref={el => { settingsSectionRefs.current['data'] = el; }} style={{ marginBottom: 32 }}>
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: '#e2e8f0', marginBottom: 4 }}>📁 Data</div>
-            <div style={{ fontSize: 11, color: '#5a6280', lineHeight: 1.6 }}>Upload your bank CSV files to see your real figures across all tabs.</div>
+            <div style={{ fontSize: 11, color: '#6b7290', lineHeight: 1.6 }}>Upload your bank CSV files to see your real figures across all tabs.</div>
           </div>
 
           {/* Drop zone */}
@@ -6380,7 +6477,7 @@ function DashboardInner() {
         <div ref={el => { settingsSectionRefs.current['categories'] = el; }} style={{ marginBottom: 32 }}>
           <div style={{ marginBottom: 14 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: '#e2e8f0', marginBottom: 4 }}>🏷️ Categories</div>
-            <div style={{ fontSize: 11, color: '#5a6280', lineHeight: 1.6 }}>Custom rules to override how Comma categorises your merchants.</div>
+            <div style={{ fontSize: 11, color: '#6b7290', lineHeight: 1.6 }}>Custom rules to override how Comma categorises your merchants.</div>
           </div>
 
           {/* Rule list */}
@@ -6493,7 +6590,7 @@ function DashboardInner() {
             <div ref={el => { settingsSectionRefs.current['preferences'] = el; }} style={{ marginBottom: 32 }}>
               <div style={{ marginBottom: 14 }}>
                 <div style={{ fontSize: 14, fontWeight: 700, color: '#e2e8f0', marginBottom: 4 }}>⚙️ Preferences</div>
-                <div style={{ fontSize: 11, color: '#5a6280', lineHeight: 1.6 }}>Customise which categories and features appear in your dashboard.</div>
+                <div style={{ fontSize: 11, color: '#6b7290', lineHeight: 1.6 }}>Customise which categories and features appear in your dashboard.</div>
               </div>
 
               {/* Category Visibility */}
@@ -6605,7 +6702,7 @@ function DashboardInner() {
         <div ref={el => { settingsSectionRefs.current['ai'] = el; }} style={{ marginBottom: 32 }}>
           <div style={{ marginBottom: 14 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: '#e2e8f0', marginBottom: 4 }}>🤖 AI Insights</div>
-            <div style={{ fontSize: 11, color: '#5a6280', lineHeight: 1.6 }}>Connect your preferred AI provider for personalised financial insights. Your data goes directly from your browser to your AI — Comma is never in the loop.</div>
+            <div style={{ fontSize: 11, color: '#6b7290', lineHeight: 1.6 }}>Connect your preferred AI provider for personalised financial insights. Your data goes directly from your browser to your AI — Comma is never in the loop.</div>
           </div>
 
           {/* Provider selector */}
@@ -6683,7 +6780,7 @@ function DashboardInner() {
         <div ref={el => { settingsSectionRefs.current['account'] = el; }} style={{ marginBottom: 32 }}>
           <div style={{ marginBottom: 14 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: '#e2e8f0', marginBottom: 4 }}>👤 Account</div>
-            <div style={{ fontSize: 11, color: '#5a6280', lineHeight: 1.6 }}>Sign in to sync your data across devices with end-to-end encryption.</div>
+            <div style={{ fontSize: 11, color: '#6b7290', lineHeight: 1.6 }}>Sign in to sync your data across devices with end-to-end encryption.</div>
           </div>
 
           <AuthSection
@@ -6716,13 +6813,13 @@ function DashboardInner() {
         <div ref={el => { settingsSectionRefs.current['about'] = el; }} style={{ marginBottom: 32 }}>
           <div style={{ marginBottom: 14 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: '#e2e8f0', marginBottom: 4 }}>ℹ️ About</div>
-            <div style={{ fontSize: 11, color: '#5a6280', lineHeight: 1.6 }}>Comma v0.5.0 — Personal finance dashboard for Australian households.</div>
+            <div style={{ fontSize: 11, color: '#6b7290', lineHeight: 1.6 }}>Comma v0.5.0 — Personal finance dashboard for Australian households.</div>
           </div>
 
           {/* Disclaimer */}
           <div style={{ padding: '12px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.05)', marginBottom: 14 }}>
             <div style={{ fontSize: 10, color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Financial Disclaimer</div>
-            <p style={{ margin: 0, fontSize: 11, color: '#5a6280', lineHeight: 1.7 }}>
+            <p style={{ margin: 0, fontSize: 11, color: '#6b7290', lineHeight: 1.7 }}>
               Comma is a financial dashboard tool, not a licensed financial adviser. All information, calculations, and AI-generated insights are for personal informational use only and do not constitute financial, tax, or investment advice. Consult a qualified professional for decisions about your specific financial situation.
             </p>
           </div>
@@ -6762,7 +6859,7 @@ function DashboardInner() {
         Generated by Comma · {new Date().toLocaleDateString('en-AU',{day:'numeric',month:'long',year:'numeric'})} · getcomma.com.au
       </div>
       </div>{/* end tab content wrapper */}
-      </div>{/* end main content */}
+      </main>{/* end main content */}
 
       {/* ═══ COLUMN MAPPING MODAL ═══ */}
       {mappingFileId && (() => {
@@ -6863,7 +6960,7 @@ function DashboardInner() {
           ) : !aiKey ? (
             /* ── No API key ── */
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 0, padding: 28, textAlign: 'center' }}>
-              <div style={{ fontSize: 32, marginBottom: 12, color: '#5a6280', opacity: 0.6 }}>🤖</div>
+              <div style={{ fontSize: 32, marginBottom: 12, color: '#6b7290', opacity: 0.6 }}>🤖</div>
               <div style={{ fontSize: 15, fontWeight: 600, color: '#eef0f6', marginBottom: 4, fontFamily: "'DM Sans',sans-serif" }}>AI insights not configured</div>
               <div style={{ fontSize: 13, color: '#8b95b8', maxWidth: 240, lineHeight: 1.6, marginBottom: 16, fontFamily: "'DM Sans',sans-serif" }}>Add your API key in Settings to chat with your financial data</div>
               <button onClick={() => { setTab('settings'); setChatOpen(false); }} style={{ padding: '8px 20px', borderRadius: 8, background: 'transparent', border: '1px solid rgba(99,102,241,0.5)', color: '#818cf8', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Set up AI →</button>
@@ -6949,7 +7046,7 @@ function DashboardInner() {
 
             {/* Input area */}
             <div style={{ padding: '8px 12px 12px', borderTop: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
-              <div style={{ textAlign: 'center', fontSize: 10, color: '#5a6280', marginBottom: 6 }}>AI responses are general only — not financial advice.</div>
+              <div style={{ textAlign: 'center', fontSize: 10, color: '#6b7290', marginBottom: 6 }}>AI responses are general only — not financial advice.</div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
                 <textarea
                   ref={chatInputRef}
